@@ -103,7 +103,7 @@ export const ViewPage: React.FC = () => {
       {/* Header */}
       <div className="bg-slate-800 py-4 px-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">WordMaster Display</h1>
+          <h1 className="text-2xl font-bold">APIIT Spell Master</h1>
           <Link
             to="/"
             className="bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg transition-colors text-sm"
@@ -117,14 +117,6 @@ export const ViewPage: React.FC = () => {
       <div className="flex-1 flex items-center justify-center p-8">
         {student && word ? (
           <div className="text-center max-w-4xl mx-auto">
-            {/* Student Name */}
-            <div className="mb-16">
-              <h2 className="text-5xl font-bold text-blue-400 mb-6">Student</h2>
-              <div className="text-7xl font-bold text-white bg-blue-600 px-12 py-8 rounded-2xl shadow-2xl">
-                {student}
-              </div>
-            </div>
-
             {/* Word */}
             <div className="mb-16">
               <h2 className="text-5xl font-bold text-green-400 mb-6">Word</h2>
@@ -151,18 +143,14 @@ export const ViewPage: React.FC = () => {
         ) : (
           <div className="text-center">
             <div className="text-8xl mb-8">🎯</div>
-            <h2 className="text-6xl font-bold text-slate-400 mb-4">Waiting for Game</h2>
+            <h2 className="text-6xl font-bold text-slate-400 mb-4">Waiting for Next Word</h2>
             <p className="text-3xl text-slate-500">
-              Control panel will start the game
+              Ready for the next challenge
             </p>
           </div>
         )}
       </div>
 
-      {/* Footer */}
-      <div className="bg-slate-800 py-4 px-6 text-center text-slate-400">
-        <p>WordMaster - Live synchronized display</p>
-      </div>
     </div>
   );
 };

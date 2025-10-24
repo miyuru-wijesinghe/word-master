@@ -6,7 +6,7 @@ export const MainPage: React.FC = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-4">
       <div className="text-center max-w-2xl">
         <h1 className="text-6xl font-bold text-slate-800 mb-4">
-          WordMaster
+          APIIT Spell Master
         </h1>
         <p className="text-xl text-slate-600 mb-12">
           Live word explanation game

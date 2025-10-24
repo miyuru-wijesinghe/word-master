@@ -264,15 +264,15 @@ export const ActionPage: React.FC = () => {
             <div className="mb-6 p-4 bg-blue-50 rounded-lg">
               <h3 className="text-lg font-semibold text-blue-800 mb-2">Current Round:</h3>
               <p className="text-blue-700">
-                <strong>Student:</strong> {currentStudent} | <strong>Word:</strong> {currentWord}
+                <strong>Word:</strong> {currentWord}
               </p>
             </div>
           )}
         </div>
 
         {/* Data Table */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Quiz Data</h2>
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h2 className="text-xl font-semibold text-slate-900 mb-4">Game Participants</h2>
           <DataTable
             data={quizData}
             selectedRow={selectedRow}
