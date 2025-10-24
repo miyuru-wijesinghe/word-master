@@ -143,7 +143,7 @@ export const ViewPage: React.FC = () => {
         ) : (
           <div className="text-center">
             <div className="text-8xl mb-8">🎯</div>
-            <h2 className="text-6xl font-bold text-slate-400 mb-4">Waiting for Next Word</h2>
+            <h2 className="text-6xl font-bold text-slate-400 mb-4">Waiting for the Word</h2>
             <p className="text-3xl text-slate-500">
               Ready for the next challenge
             </p>
