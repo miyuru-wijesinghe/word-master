@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 
 export interface QuizRow {
   Round: string;
+  Team: string;
   StudentName: string;
   Word: string;
 }
@@ -32,14 +33,14 @@ export const parseExcelFile = async (file: File): Promise<QuizRow[]> => {
 
         // Get headers and validate
         const headers = jsonData[0] as string[];
-        const expectedHeaders = ['Round', 'StudentName', 'Word'];
+        const expectedHeaders = ['Round', 'Team', 'StudentName', 'Word'];
         
         const hasRequiredHeaders = expectedHeaders.every(header => 
           headers.some(h => h.toLowerCase() === header.toLowerCase())
         );
 
         if (!hasRequiredHeaders) {
-          reject(new Error('Excel file must contain columns: Round, StudentName, Word'));
+          reject(new Error('Excel file must contain columns: Round, Team, StudentName, Word'));
           return;
         }
 
@@ -48,6 +49,7 @@ export const parseExcelFile = async (file: File): Promise<QuizRow[]> => {
         headers.forEach(header => {
           const lowerHeader = header.toLowerCase();
           if (lowerHeader === 'round') headerMap[header] = 'Round';
+          else if (lowerHeader === 'team') headerMap[header] = 'Team';
           else if (lowerHeader === 'studentname' || lowerHeader === 'student name') headerMap[header] = 'StudentName';
           else if (lowerHeader === 'word') headerMap[header] = 'Word';
         });
@@ -56,9 +58,10 @@ export const parseExcelFile = async (file: File): Promise<QuizRow[]> => {
         const quizData: QuizRow[] = [];
         for (let i = 1; i < jsonData.length; i++) {
           const row = jsonData[i] as any[];
-          if (row.length >= 3) {
+          if (row.length >= 4) {
             quizData.push({
               Round: row[headers.indexOf(Object.keys(headerMap).find(h => headerMap[h] === 'Round')!)],
+              Team: row[headers.indexOf(Object.keys(headerMap).find(h => headerMap[h] === 'Team')!)],
               StudentName: row[headers.indexOf(Object.keys(headerMap).find(h => headerMap[h] === 'StudentName')!)],
               Word: row[headers.indexOf(Object.keys(headerMap).find(h => headerMap[h] === 'Word')!)]
             });
