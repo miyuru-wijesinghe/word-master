@@ -1,0 +1,22 @@
+{
+  "rules": {
+    "rooms": {
+      "$roomId": {
+        "messages": {
+          ".read": true,
+          ".write": true,
+          "$messageId": {
+            ".validate": "newData.hasChildren(['data', 'timestamp'])",
+            "data": {
+              ".validate": "newData.hasChildren(['type'])"
+            },
+            "timestamp": {
+              ".validate": "newData.isNumber() || newData.val() == null"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

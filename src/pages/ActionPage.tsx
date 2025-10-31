@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { DataTable } from '../components/DataTable';
-import { Timer } from '../components/Timer';
 import { parseExcelFile } from '../utils/excelParser';
 import type { QuizRow } from '../utils/excelParser';
 import { broadcastManager } from '../utils/broadcast';
@@ -20,34 +19,181 @@ export const ActionPage: React.FC = () => {
   const [currentWord, setCurrentWord] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Handle row selection (toggle)
+  // Handle row selection - just select, don't start
   const handleSelectRow = (index: number) => {
-    setSelectedRows(prev => 
-      prev.includes(index) 
-        ? prev.filter(i => i !== index)
-        : [...prev, index]
-    );
+    // Toggle selection
+    const newSelectedRows = selectedRows.includes(index)
+      ? selectedRows.filter(i => i !== index)
+      : [...selectedRows, index];
+    
+    setSelectedRows(newSelectedRows);
+    
+    // Get the last selected row's word to display in ManageScreen
+    const lastSelectedIndex = newSelectedRows.length > 0 
+      ? newSelectedRows[newSelectedRows.length - 1] 
+      : -1;
+    const lastRow = lastSelectedIndex >= 0 ? quizData[lastSelectedIndex] : null;
+
+    // Broadcast selected entries and current word to manage screen
+    // Include word in data for ManageScreen, but set isRunning to false so ViewPage ignores it
+    const message: QuizMessage = {
+      type: 'update',
+      data: lastRow ? {
+        student: '',
+        word: lastRow.Word,
+        timeLeft: 0,
+        isRunning: false  // ViewPage will ignore this because isRunning is false
+      } : undefined,
+      selectedEntries: newSelectedRows.map(i => ({
+        word: quizData[i].Word,
+        team: quizData[i].Team
+      }))
+    };
+    broadcastManager.send(message);
   };
 
-  // Handle row updates from dropdowns
+  // Handle row updates from dropdowns (not used in new format, but kept for compatibility)
   const handleUpdateRow = (index: number, field: keyof QuizRow, value: string) => {
     setQuizData(prevData => {
       const newData = prevData.map((row, i) => {
         if (i === index) {
-          const updatedRow = { ...row, [field]: value };
-          
-          // If team changes, reset the name to empty (optional)
-          if (field === 'Team') {
-            updatedRow.StudentName = '';
-          }
-          
-          return updatedRow;
+          return { ...row, [field]: value };
         }
         return row;
       });
       return newData;
     });
   };
+
+  // Listen for control messages from ManageScreen
+  useEffect(() => {
+    const unsubscribe = broadcastManager.listen((message: QuizMessage) => {
+      if (message.type === 'control' && message.control) {
+        const { action, addSeconds } = message.control;
+        
+        switch (action) {
+          case 'start':
+            // Use functional update to get latest selectedRows
+            setSelectedRows(currentSelected => {
+              if (currentSelected.length > 0) {
+                // Use the last selected row
+                const lastSelectedIndex = currentSelected[currentSelected.length - 1];
+                const selectedData = quizData[lastSelectedIndex];
+                
+                // Get duration from control message or default to 60
+                const duration = message.control?.duration || 60;
+                
+                setCurrentStudent(''); // No longer using student name
+                setCurrentWord(selectedData.Word);
+                setStartedRow(lastSelectedIndex);
+                setTimeLeft(duration);
+                setIsRunning(true);
+                setIsPaused(false);
+                lastSpokenRef.current = -1; // Reset speech tracking when timer starts
+                
+                soundManager.playStartSound();
+                
+                const startMessage: QuizMessage = {
+                  type: 'update',
+                  data: {
+                    student: '',
+                    word: selectedData.Word,
+                    timeLeft: duration,
+                    isRunning: true,
+                    duration: duration
+                  },
+                  selectedEntries: currentSelected.map(i => ({
+                    word: quizData[i].Word,
+                    team: quizData[i].Team
+                  }))
+                };
+                broadcastManager.send(startMessage);
+              }
+              return currentSelected;
+            });
+            break;
+          case 'pause':
+            setIsPaused(prevPaused => {
+              const newPaused = !prevPaused;
+              
+              soundManager.playPauseSound();
+              
+              setCurrentStudent(prev => {
+                setCurrentWord(prevWord => {
+                  setTimeLeft(prevTime => {
+                    const pauseMessage: QuizMessage = {
+                      type: newPaused ? 'pause' : 'update',
+                      data: {
+                        student: prev,
+                        word: prevWord,
+                        timeLeft: prevTime,
+                        isRunning: !newPaused
+                      },
+                      selectedEntries: selectedRows.map(i => ({
+                        word: quizData[i].Word,
+                        team: quizData[i].Team
+                      }))
+                    };
+                    broadcastManager.send(pauseMessage);
+                    return prevTime;
+                  });
+                  return prevWord;
+                });
+                return prev;
+              });
+              
+              return newPaused;
+            });
+            break;
+          case 'end':
+            setIsRunning(false);
+            setIsPaused(false);
+            setTimeLeft(60);
+            setCurrentStudent('');
+            setCurrentWord('');
+            setStartedRow(null);
+            
+            soundManager.playEndSound();
+            
+            const endMessage: QuizMessage = {
+              type: 'end',
+              selectedEntries: selectedRows.map(i => ({
+                word: quizData[i].Word,
+                team: quizData[i].Team
+              }))
+            };
+            broadcastManager.send(endMessage);
+            break;
+          case 'addTime':
+            if (addSeconds && (isRunning || isPaused)) {
+              const newTime = Math.min(timeLeft + addSeconds, 3600); // Max 1 hour
+              setTimeLeft(newTime);
+              
+              // Broadcast updated time
+              const updateMessage: QuizMessage = {
+                type: 'update',
+                data: {
+                  student: currentStudent,
+                  word: currentWord,
+                  timeLeft: newTime,
+                  isRunning: isRunning
+                },
+                selectedEntries: selectedRows.map(i => ({
+                  word: quizData[i].Word,
+                  team: quizData[i].Team
+                }))
+              };
+              broadcastManager.send(updateMessage);
+            }
+            break;
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [selectedRows, quizData, currentStudent, currentWord, isRunning, isPaused, timeLeft]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -134,7 +280,7 @@ export const ActionPage: React.FC = () => {
     const lastSelectedIndex = selectedRows[selectedRows.length - 1];
     const selectedData = quizData[lastSelectedIndex];
     
-    setCurrentStudent(selectedData.StudentName);
+    setCurrentStudent(''); // No longer using student name
     setCurrentWord(selectedData.Word);
     setStartedRow(lastSelectedIndex);
     setTimeLeft(60);
@@ -144,15 +290,19 @@ export const ActionPage: React.FC = () => {
     // Play start sound
     soundManager.playStartSound();
 
-    // Broadcast to view page
+    // Broadcast to view page and manage screen
     const message: QuizMessage = {
       type: 'update',
       data: {
-        student: selectedData.StudentName,
+        student: '',
         word: selectedData.Word,
         timeLeft: 60,
         isRunning: true
-      }
+      },
+      selectedEntries: selectedRows.map(i => ({
+        word: quizData[i].Word,
+        team: quizData[i].Team
+      }))
     };
     broadcastManager.send(message);
   };
@@ -170,7 +320,11 @@ export const ActionPage: React.FC = () => {
         word: currentWord,
         timeLeft,
         isRunning: !isPaused
-      }
+      },
+      selectedEntries: selectedRows.map(i => ({
+        word: quizData[i].Word,
+        team: quizData[i].Team
+      }))
     };
     broadcastManager.send(message);
   };
@@ -182,39 +336,150 @@ export const ActionPage: React.FC = () => {
     setCurrentStudent('');
     setCurrentWord('');
     setStartedRow(null);
-    // Don't clear selectedRows - keep them in bottom table
+    // Don't clear selectedRows - keep them for manage screen
 
     // Play end sound
     soundManager.playEndSound();
 
-    // Broadcast end to view page
-    broadcastManager.send({ type: 'end' });
-  };
-
-  const handleTimerTick = (newTimeLeft: number) => {
-    setTimeLeft(newTimeLeft);
-    
-    // Broadcast update
+    // Broadcast end to view page and manage screen (with current selected entries)
     const message: QuizMessage = {
-      type: 'update',
-      data: {
-        student: currentStudent,
-        word: currentWord,
-        timeLeft: newTimeLeft,
-        isRunning: true
-      }
+      type: 'end',
+      selectedEntries: selectedRows.map(i => ({
+        word: quizData[i].Word,
+        team: quizData[i].Team
+      }))
     };
     broadcastManager.send(message);
   };
 
-  const handleTimerEnd = () => {
-    setIsRunning(false);
-    setIsPaused(false);
-    setStartedRow(null);
+  // Ref to track last spoken time
+  const lastSpokenRef = useRef<number>(-1);
+  
+  // Timer interval - runs when timer is active
+  useEffect(() => {
+    let intervalId: number | null = null;
     
-    // Broadcast end
-    broadcastManager.send({ type: 'end' });
-  };
+    const speakTime = (time: number) => {
+      if ('speechSynthesis' in window) {
+        // Cancel any ongoing speech
+        speechSynthesis.cancel();
+        
+        // Wait a bit for cancel to take effect
+        setTimeout(() => {
+          const utterance = new SpeechSynthesisUtterance(time.toString());
+          utterance.rate = 0.8;
+          utterance.volume = 1.0; // Full volume
+          utterance.pitch = 1.0;
+          
+          // Get voices - may need to load first
+          const getVoices = () => {
+            let voices = speechSynthesis.getVoices();
+            if (voices.length === 0) {
+              // Voices not loaded yet, wait for voiceschanged event
+              return new Promise<SpeechSynthesisVoice[]>((resolve) => {
+                const handler = () => {
+                  voices = speechSynthesis.getVoices();
+                  speechSynthesis.onvoiceschanged = null;
+                  resolve(voices);
+                };
+                speechSynthesis.onvoiceschanged = handler;
+                // Fallback timeout
+                setTimeout(() => {
+                  speechSynthesis.onvoiceschanged = null;
+                  resolve([]);
+                }, 1000);
+              });
+            }
+            return Promise.resolve(voices);
+          };
+          
+          getVoices().then((voices) => {
+            const preferredVoice = voices.find(voice => 
+              voice.lang.startsWith('en') && (voice.name.includes('Google') || voice.name.includes('Microsoft'))
+            ) || voices.find(voice => voice.lang.startsWith('en'));
+            
+            if (preferredVoice) {
+              utterance.voice = preferredVoice;
+            }
+            
+            speechSynthesis.speak(utterance);
+          });
+        }, 50);
+      }
+    };
+    
+    if (isRunning && !isPaused) {
+      intervalId = window.setInterval(() => {
+        setTimeLeft(prev => {
+          const newTime = prev - 1;
+          
+          if (newTime <= 0) {
+            // Timer ended - update state and broadcast
+            setIsRunning(false);
+            setIsPaused(false);
+            setStartedRow(null);
+            
+            // Broadcast end message with word included
+            const endMessage: QuizMessage = {
+              type: 'end',
+              data: {
+                student: '',
+                word: currentWord,
+                timeLeft: 0,
+                isRunning: false
+              },
+              selectedEntries: selectedRows.map(i => ({
+                word: quizData[i].Word,
+                team: quizData[i].Team
+              }))
+            };
+            broadcastManager.send(endMessage);
+            
+            return 0;
+          }
+          
+          // Speech and sound announcements
+          if (newTime === 50 || newTime === 40 || newTime === 30 || newTime === 20 || newTime === 10) {
+            if (lastSpokenRef.current !== newTime) {
+              speakTime(newTime);
+              soundManager.playWarningSound();
+              broadcastManager.sendSpeech(newTime, true);
+              lastSpokenRef.current = newTime;
+            }
+          } else if (newTime <= 10 && newTime > 0 && lastSpokenRef.current !== newTime) {
+            speakTime(newTime);
+            soundManager.playTickSound();
+            lastSpokenRef.current = newTime;
+            broadcastManager.sendSpeech(newTime, true);
+          }
+          
+          // Broadcast update with new time
+          const updateMessage: QuizMessage = {
+            type: 'update',
+            data: {
+              student: currentStudent,
+              word: currentWord,
+              timeLeft: newTime,
+              isRunning: true
+            },
+            selectedEntries: selectedRows.map(i => ({
+              word: quizData[i].Word,
+              team: quizData[i].Team
+            }))
+          };
+          broadcastManager.send(updateMessage);
+          
+          return newTime;
+        });
+      }, 1000);
+    }
+    
+    return () => {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isRunning, isPaused, selectedRows, quizData, currentStudent, currentWord]);
 
   // Save selected data as new Excel file
   const handleSaveData = () => {
@@ -314,29 +579,6 @@ export const ActionPage: React.FC = () => {
             className="hidden"
           />
 
-          {/* Timer Display */}
-          {(isRunning || isPaused) && (
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <Timer
-                duration={60}
-                isRunning={isRunning}
-                isPaused={isPaused}
-                onTick={handleTimerTick}
-                onEnd={handleTimerEnd}
-                isControlPanel={true}
-              />
-            </div>
-          )}
-
-          {/* Current Selection */}
-          {currentStudent && currentWord && (
-            <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-              <h3 className="text-lg font-semibold text-blue-800 mb-2">Current Round:</h3>
-              <p className="text-blue-700">
-                <strong>Word:</strong> {currentWord}
-              </p>
-            </div>
-          )}
         </div>
 
         {/* Data Table */}
@@ -351,133 +593,6 @@ export const ActionPage: React.FC = () => {
           />
         </div>
 
-        {/* Selected Data Form */}
-        {selectedRows.length > 0 && (
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 className="text-xl font-semibold text-slate-900 mb-4">
-              Selected Entries ({selectedRows.length} selected)
-            </h2>
-            
-            {/* Display all selected entries as table */}
-            <div className="overflow-x-auto">
-              <table className="min-w-full bg-white border border-gray-200 rounded-lg shadow-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      #
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Word
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Team
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Round
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {selectedRows.map((rowIndex, index) => {
-                    const row = quizData[rowIndex];
-                    return (
-                      <tr 
-                        key={rowIndex} 
-                        className={`hover:bg-gray-50 transition-colors duration-200 ${
-                          startedRow === rowIndex
-                            ? 'bg-green-100 border-l-4 border-green-500 shadow-md'
-                            : 'hover:shadow-sm'
-                        }`}
-                      >
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {index + 1}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {row?.Word}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {row?.Team}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {row?.StudentName || '-- Not Selected --'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {row?.Round}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            startedRow === rowIndex
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {startedRow === rowIndex ? 'Running' : 'Selected'}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Floating Action Buttons */}
-      <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-50">
-        <div className="flex flex-col items-center gap-1">
-          <button
-            onClick={handleStart}
-            disabled={selectedRows.length === 0 || isRunning}
-            className={`w-14 h-14 rounded-full shadow-lg transition-all duration-200 flex items-center justify-center text-white font-bold ${
-              selectedRows.length === 0 || isRunning
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-green-600 hover:bg-green-700 hover:scale-110'
-            }`}
-            title="Start Challenge"
-          >
-            ▶️
-          </button>
-          <span className="text-xs text-white bg-black bg-opacity-50 px-2 py-1 rounded">Play</span>
-        </div>
-        
-        <div className="flex flex-col items-center gap-1">
-          <button
-            onClick={handlePause}
-            disabled={!isRunning}
-            className={`w-14 h-14 rounded-full shadow-lg transition-all duration-200 flex items-center justify-center text-white font-bold ${
-              !isRunning
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-yellow-600 hover:bg-yellow-700 hover:scale-110'
-            }`}
-            title={isPaused ? 'Resume' : 'Pause'}
-          >
-            {isPaused ? '▶️' : '⏸️'}
-          </button>
-          <span className="text-xs text-white bg-black bg-opacity-50 px-2 py-1 rounded">Pause</span>
-        </div>
-        
-        <div className="flex flex-col items-center gap-1">
-          <button
-            onClick={handleEnd}
-            disabled={!isRunning && !isPaused}
-            className={`w-14 h-14 rounded-full shadow-lg transition-all duration-200 flex items-center justify-center text-white font-bold ${
-              !isRunning && !isPaused
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-red-600 hover:bg-red-700 hover:scale-110'
-            }`}
-            title="End Challenge"
-          >
-            ⏹️
-          </button>
-          <span className="text-xs text-white bg-black bg-opacity-50 px-2 py-1 rounded">End</span>
-        </div>
       </div>
     </div>
   );

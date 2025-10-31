@@ -1,10 +1,11 @@
 import * as XLSX from 'xlsx';
 
 export interface QuizRow {
-  Round: string;
   Team: string;
-  StudentName: string;
   Word: string;
+  WordOrigin: string;
+  Meaning: string;
+  WordInContext: string;
 }
 
 export const parseExcelFile = async (file: File): Promise<QuizRow[]> => {
@@ -32,40 +33,69 @@ export const parseExcelFile = async (file: File): Promise<QuizRow[]> => {
         }
 
         // Get headers and validate
-        const headers = jsonData[0] as string[];
-        const expectedHeaders = ['Round', 'Team', 'StudentName', 'Word'];
+        const headers = (jsonData[0] as any[]).map((h: any) => String(h || '').trim());
         
-        const hasRequiredHeaders = expectedHeaders.every(header => 
-          headers.some(h => h.toLowerCase() === header.toLowerCase())
-        );
+        // Flexible header matching - check if we have the required columns
+        const headerMap: { [key: string]: number } = {};
+        headers.forEach((header, index) => {
+          const lowerHeader = String(header).toLowerCase().trim();
+          if (lowerHeader.includes('team') && !headerMap['Team']) {
+            headerMap['Team'] = index;
+          }
+          if (lowerHeader === 'word' && !headerMap['Word']) {
+            headerMap['Word'] = index;
+          }
+          if ((lowerHeader.includes('word origin') || lowerHeader.includes('origin')) && !headerMap['WordOrigin']) {
+            headerMap['WordOrigin'] = index;
+          }
+          if (lowerHeader === 'meaning' && !headerMap['Meaning']) {
+            headerMap['Meaning'] = index;
+          }
+          if ((lowerHeader.includes('word in context') || lowerHeader.includes('context')) && !headerMap['WordInContext']) {
+            headerMap['WordInContext'] = index;
+          }
+        });
 
-        if (!hasRequiredHeaders) {
-          reject(new Error('Excel file must contain columns: Round, Team, StudentName, Word'));
+        if (Object.keys(headerMap).length < 5) {
+          reject(new Error('Excel file must contain columns: Team name, Word, Word Origin, Meaning, Word in context'));
           return;
         }
 
-        // Map headers to standardized names
-        const headerMap: { [key: string]: string } = {};
-        headers.forEach(header => {
-          const lowerHeader = header.toLowerCase();
-          if (lowerHeader === 'round') headerMap[header] = 'Round';
-          else if (lowerHeader === 'team') headerMap[header] = 'Team';
-          else if (lowerHeader === 'studentname' || lowerHeader === 'student name') headerMap[header] = 'StudentName';
-          else if (lowerHeader === 'word') headerMap[header] = 'Word';
-        });
-
-        // Convert data rows
+        // Convert data rows - skip empty rows and rows without team/word
         const quizData: QuizRow[] = [];
+        let currentTeam = '';
+        
         for (let i = 1; i < jsonData.length; i++) {
           const row = jsonData[i] as any[];
-          if (row.length >= 4) {
+          if (!row || row.length === 0) continue;
+          
+          // Get values with fallback to empty string
+          const teamValue = String(row[headerMap['Team']] || '').trim();
+          const wordValue = String(row[headerMap['Word']] || '').trim();
+          const originValue = String(row[headerMap['WordOrigin']] || '').trim();
+          const meaningValue = String(row[headerMap['Meaning']] || '').trim();
+          const contextValue = String(row[headerMap['WordInContext']] || '').trim();
+          
+          // Update current team if this row has a team value
+          if (teamValue) {
+            currentTeam = teamValue;
+          }
+          
+          // Only add row if it has a word (team can be from previous row)
+          if (wordValue) {
             quizData.push({
-              Round: row[headers.indexOf(Object.keys(headerMap).find(h => headerMap[h] === 'Round')!)],
-              Team: row[headers.indexOf(Object.keys(headerMap).find(h => headerMap[h] === 'Team')!)],
-              StudentName: row[headers.indexOf(Object.keys(headerMap).find(h => headerMap[h] === 'StudentName')!)],
-              Word: row[headers.indexOf(Object.keys(headerMap).find(h => headerMap[h] === 'Word')!)]
+              Team: currentTeam || teamValue || '',
+              Word: wordValue,
+              WordOrigin: originValue,
+              Meaning: meaningValue,
+              WordInContext: contextValue
             });
           }
+        }
+
+        if (quizData.length === 0) {
+          reject(new Error('No valid data rows found in Excel file'));
+          return;
         }
 
         resolve(quizData);

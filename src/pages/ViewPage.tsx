@@ -4,11 +4,14 @@ import { broadcastManager } from '../utils/broadcast';
 import type { QuizMessage } from '../utils/broadcast';
 
 export const ViewPage: React.FC = () => {
-  const [student, setStudent] = useState('');
   const [word, setWord] = useState('');
   const [timeLeft, setTimeLeft] = useState(60);
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [timerEnded, setTimerEnded] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string>('');
+  const [displayMode, setDisplayMode] = useState<'timer' | 'video'>('timer');
+  const videoRef = useRef<HTMLVideoElement>(null);
   const lastSpokenRef = useRef<number>(-1);
 
   const speakTime = (time: number) => {
@@ -16,22 +19,47 @@ export const ViewPage: React.FC = () => {
       // Cancel any ongoing speech
       speechSynthesis.cancel();
       
-      const utterance = new SpeechSynthesisUtterance(time.toString());
-      utterance.rate = 0.8;
-      utterance.volume = 0.8;
-      utterance.pitch = 1.0;
-      
-      // Use a more natural voice if available
-      const voices = speechSynthesis.getVoices();
-      const preferredVoice = voices.find(voice => 
-        voice.lang.startsWith('en') && voice.name.includes('Google')
-      ) || voices.find(voice => voice.lang.startsWith('en'));
-      
-      if (preferredVoice) {
-        utterance.voice = preferredVoice;
-      }
-      
-      speechSynthesis.speak(utterance);
+      // Wait a bit for cancel to take effect
+      setTimeout(() => {
+        const utterance = new SpeechSynthesisUtterance(time.toString());
+        utterance.rate = 0.8;
+        utterance.volume = 1.0; // Full volume
+        utterance.pitch = 1.0;
+        
+        // Get voices - may need to load first
+        const getVoices = () => {
+          let voices = speechSynthesis.getVoices();
+          if (voices.length === 0) {
+            // Voices not loaded yet, wait for voiceschanged event
+            return new Promise<SpeechSynthesisVoice[]>((resolve) => {
+              const handler = () => {
+                voices = speechSynthesis.getVoices();
+                speechSynthesis.onvoiceschanged = null;
+                resolve(voices);
+              };
+              speechSynthesis.onvoiceschanged = handler;
+              // Fallback timeout
+              setTimeout(() => {
+                speechSynthesis.onvoiceschanged = null;
+                resolve([]);
+              }, 1000);
+            });
+          }
+          return Promise.resolve(voices);
+        };
+        
+        getVoices().then((voices) => {
+          const preferredVoice = voices.find(voice => 
+            voice.lang.startsWith('en') && (voice.name.includes('Google') || voice.name.includes('Microsoft'))
+          ) || voices.find(voice => voice.lang.startsWith('en'));
+          
+          if (preferredVoice) {
+            utterance.voice = preferredVoice;
+          }
+          
+          speechSynthesis.speak(utterance);
+        });
+      }, 50);
     }
   };
 
@@ -39,13 +67,19 @@ export const ViewPage: React.FC = () => {
     const cleanup = broadcastManager.listen((message: QuizMessage) => {
       switch (message.type) {
         case 'update':
-          if (message.data) {
-            setStudent(message.data.student);
+          // Only update ViewPage if timer is actually running (isRunning === true)
+          // Don't update on row selection - that's only for ManageScreen
+          if (message.data && message.data.isRunning) {
+            // Store word but don't display - only display after timer ends
             setWord(message.data.word);
             setTimeLeft(message.data.timeLeft);
             setIsRunning(message.data.isRunning);
             setIsPaused(!message.data.isRunning);
+            // NEVER show word during countdown or selection - only after timer ends
+            // timerEnded is only set to true when 'end' message is received
+            setTimerEnded(false);
           }
+          // If message.data.isRunning is false or missing, ignore it (row selection)
           break;
         case 'speech':
           if (message.speechData && message.speechData.shouldSpeak) {
@@ -62,16 +96,59 @@ export const ViewPage: React.FC = () => {
           setIsRunning(false);
           break;
         case 'end':
+          // If word is provided in end message, timer ended naturally - show word
+          // If no word in end message, End button was pressed - reset to default
+          if (message.data && message.data.word) {
+            // Timer ended naturally - show word
+            setTimerEnded(true);
+            setWord(message.data.word);
+            setIsRunning(false);
+            setIsPaused(false);
+          } else {
+            // End button was pressed - reset to default
+            setTimerEnded(false);
+            setIsRunning(false);
+            setIsPaused(false);
+            setWord('');
+            setTimeLeft(60);
+          }
+          lastSpokenRef.current = -1;
+          if ('speechSynthesis' in window) {
+            speechSynthesis.cancel();
+          }
+          break;
         case 'clear':
-          setStudent('');
           setWord('');
           setTimeLeft(60);
           setIsRunning(false);
           setIsPaused(false);
+          setTimerEnded(false);
+          setVideoUrl('');
+          setDisplayMode('timer');
           lastSpokenRef.current = -1;
           // Cancel any ongoing speech
           if ('speechSynthesis' in window) {
             speechSynthesis.cancel();
+          }
+          break;
+        case 'video':
+          if (message.videoData) {
+            setDisplayMode('video');
+            setVideoUrl(message.videoData.url);
+            
+            // Control video playback
+            if (videoRef.current) {
+              if (message.videoData.action === 'play') {
+                videoRef.current.play().catch(console.error);
+              } else if (message.videoData.action === 'pause') {
+                videoRef.current.pause();
+              } else if (message.videoData.action === 'stop') {
+                videoRef.current.pause();
+                videoRef.current.currentTime = 0;
+                setVideoUrl('');
+                setDisplayMode('timer');
+              }
+            }
           }
           break;
       }
@@ -79,6 +156,7 @@ export const ViewPage: React.FC = () => {
 
     return cleanup;
   }, []);
+
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -115,17 +193,42 @@ export const ViewPage: React.FC = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex items-center justify-center p-8">
-        {student && word ? (
+        {/* Show video if in video mode - fullscreen without controls */}
+        {displayMode === 'video' && videoUrl ? (
+          <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
+            <video
+              ref={videoRef}
+              src={videoUrl}
+              className="w-full h-full object-contain"
+              autoPlay
+            >
+              Your browser does not support the video tag.
+            </video>
+          </div>
+        ) : displayMode === 'video' && !videoUrl ? (
+          <div className="text-center">
+            <div className="text-8xl mb-8">🎬</div>
+            <h2 className="text-6xl font-bold text-slate-400 mb-4">Waiting for Video</h2>
+            <p className="text-3xl text-slate-500">
+              Select a video in Manage Screen
+            </p>
+          </div>
+        ) : displayMode === 'timer' && word && timerEnded ? (
+          /* Show word ONLY after timer ends (timerEnded === true) */
           <div className="text-center max-w-4xl mx-auto">
-            {/* Word */}
             <div className="mb-16">
               <h2 className="text-5xl font-bold text-green-400 mb-6">Word</h2>
               <div className="text-7xl font-bold text-white bg-green-600 px-12 py-8 rounded-2xl shadow-2xl">
                 {word}
               </div>
+              <div className="mt-8 text-3xl font-semibold text-slate-400">
+                Timer Ended
+              </div>
             </div>
-
-            {/* Timer */}
+          </div>
+        ) : displayMode === 'timer' && (isRunning || isPaused) ? (
+          /* Show ONLY timer when running or paused - word is always hidden during countdown */
+          <div className="text-center max-w-4xl mx-auto">
             <div className="mb-8">
               <h2 className="text-5xl font-bold text-purple-400 mb-6">Time Left</h2>
               <div className={`text-8xl font-bold ${getTimerColor()} bg-slate-800 px-12 py-8 rounded-2xl shadow-2xl`}>

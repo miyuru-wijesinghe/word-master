@@ -6,10 +6,10 @@ interface DataTableProps {
   selectedRows: number[];
   startedRow: number | null;
   onSelectRow: (index: number) => void;
-  onUpdateRow: (index: number, field: keyof QuizRow, value: string) => void;
+  onUpdateRow?: (index: number, field: keyof QuizRow, value: string) => void;
 }
 
-export const DataTable: React.FC<DataTableProps> = ({ data, selectedRows, startedRow, onSelectRow, onUpdateRow }) => {
+export const DataTable: React.FC<DataTableProps> = ({ data, selectedRows, startedRow, onSelectRow }) => {
   if (data.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500">
@@ -18,28 +18,27 @@ export const DataTable: React.FC<DataTableProps> = ({ data, selectedRows, starte
     );
   }
 
-  // Get unique values for dropdowns
-  const uniqueRounds = [...new Set(data.map(row => row.Round))].sort();
-  const uniqueTeams = [...new Set(data.map(row => row.Team))].sort();
-
   return (
     <div className="overflow-x-auto max-h-96 overflow-y-auto border border-gray-200 rounded-lg shadow-sm">
       <table className="min-w-full bg-white">
         <thead className="bg-gray-50 sticky top-0 z-10">
           <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Team Name
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Word
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Team
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Word Origin
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Name
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Meaning
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Round
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Word in Context
             </th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Action
             </th>
           </tr>
@@ -56,48 +55,22 @@ export const DataTable: React.FC<DataTableProps> = ({ data, selectedRows, starte
                   : 'hover:shadow-sm'
               }`}
             >
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+              <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                {row.Team || '--'}
+              </td>
+              <td className="px-4 py-3 text-sm font-medium text-gray-900">
                 {row.Word}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                <select
-                  value={row.Team}
-                  onChange={(e) => onUpdateRow(index, 'Team', e.target.value)}
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  {uniqueTeams.map(team => (
-                    <option key={team} value={team}>{team}</option>
-                  ))}
-                </select>
+              <td className="px-4 py-3 text-sm text-gray-600">
+                {row.WordOrigin || '--'}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                <select
-                  value={row.StudentName || ''}
-                  onChange={(e) => onUpdateRow(index, 'StudentName', e.target.value)}
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  {data
-                    .filter(r => r.Team === row.Team && r.StudentName && r.StudentName.trim() !== '')
-                    .map(r => r.StudentName)
-                    .filter((name, idx, arr) => arr.indexOf(name) === idx)
-                    .sort()
-                    .map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                </select>
+              <td className="px-4 py-3 text-sm text-gray-700 max-w-xs">
+                <div className="line-clamp-3" title={row.Meaning}>{row.Meaning || '--'}</div>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                <select
-                  value={row.Round}
-                  onChange={(e) => onUpdateRow(index, 'Round', e.target.value)}
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                >
-                  {uniqueRounds.map(round => (
-                    <option key={round} value={round}>{round}</option>
-                  ))}
-                </select>
+              <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
+                <div className="line-clamp-3 italic" title={row.WordInContext}>{row.WordInContext || '--'}</div>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+              <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
                 <button
                   onClick={() => onSelectRow(index)}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { broadcastManager } from '../utils/broadcast';
 
 export const MainPage: React.FC = () => {
   return (
@@ -47,9 +48,16 @@ export const MainPage: React.FC = () => {
           >
             📺 Display Screen
           </Link>
+          
+          <Link
+            to="/manage"
+            className="block w-full max-w-sm mx-auto bg-purple-600 hover:bg-purple-700 text-white font-semibold py-4 px-8 rounded-xl text-lg transition-all duration-200 hover:scale-105 shadow-lg"
+          >
+            📊 Manage Screen
+          </Link>
         </div>
         
-        <div className="bg-white bg-opacity-95 p-6 rounded-xl shadow-sm text-left">
+        <div className="bg-white bg-opacity-95 p-6 rounded-xl shadow-sm text-left mb-6">
           <h3 className="text-lg font-semibold text-slate-800 mb-4">How to play:</h3>
           <ol className="space-y-2 text-slate-600">
             <li><strong>1.</strong> Open Control Panel in one tab</li>
@@ -58,6 +66,18 @@ export const MainPage: React.FC = () => {
             <li><strong>4.</strong> Select a student and start the timer</li>
             <li><strong>5.</strong> Student explains the word in 60 seconds</li>
           </ol>
+        </div>
+        
+        {/* Firebase Connection Status */}
+        <div className="bg-white bg-opacity-95 p-4 rounded-xl shadow-sm text-center">
+          <div className="flex items-center justify-center gap-2">
+            <div className={`w-3 h-3 rounded-full ${broadcastManager.isFirebaseEnabled() ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+            <span className="text-sm text-slate-600">
+              {broadcastManager.isFirebaseEnabled() 
+                ? `🟢 Multi-Device Sync Enabled (Room: ${broadcastManager.getRoomId()})`
+                : '⚫ Single-Device Mode (Firebase not configured)'}
+            </span>
+          </div>
         </div>
       </div>
     </div>
