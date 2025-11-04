@@ -30,13 +30,19 @@ export const DataTable: React.FC<DataTableProps> = ({ data, selectedRows, starte
               Word
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Word Origin
+              Pronunciation
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Alternative Pronunciation
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Meaning
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Word in Context
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Word Origin
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Action
@@ -62,13 +68,19 @@ export const DataTable: React.FC<DataTableProps> = ({ data, selectedRows, starte
                 {row.Word}
               </td>
               <td className="px-4 py-3 text-sm text-gray-600">
-                {row.WordOrigin || '--'}
+                {row.Pronunciation || '--'}
+              </td>
+              <td className="px-4 py-3 text-sm text-gray-600">
+                {row.AlternativePronunciation || '--'}
               </td>
               <td className="px-4 py-3 text-sm text-gray-700 max-w-xs">
                 <div className="line-clamp-3" title={row.Meaning}>{row.Meaning || '--'}</div>
               </td>
               <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
                 <div className="line-clamp-3 italic" title={row.WordInContext}>{row.WordInContext || '--'}</div>
+              </td>
+              <td className="px-4 py-3 text-sm text-gray-600">
+                {row.WordOrigin || '--'}
               </td>
               <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
                 <button

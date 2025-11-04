@@ -3,6 +3,8 @@ import * as XLSX from 'xlsx';
 export interface QuizRow {
   Team: string;
   Word: string;
+  Pronunciation: string;
+  AlternativePronunciation: string;
   WordOrigin: string;
   Meaning: string;
   WordInContext: string;
@@ -45,6 +47,12 @@ export const parseExcelFile = async (file: File): Promise<QuizRow[]> => {
           if (lowerHeader === 'word' && !headerMap['Word']) {
             headerMap['Word'] = index;
           }
+          if ((lowerHeader.includes('pronunciation') && !lowerHeader.includes('alternative')) && !headerMap['Pronunciation']) {
+            headerMap['Pronunciation'] = index;
+          }
+          if (lowerHeader.includes('alternative pronunciation') && !headerMap['AlternativePronunciation']) {
+            headerMap['AlternativePronunciation'] = index;
+          }
           if ((lowerHeader.includes('word origin') || lowerHeader.includes('origin')) && !headerMap['WordOrigin']) {
             headerMap['WordOrigin'] = index;
           }
@@ -65,6 +73,12 @@ export const parseExcelFile = async (file: File): Promise<QuizRow[]> => {
         const quizData: QuizRow[] = [];
         let currentTeam = '';
         
+        // Helper function to clean word (remove numbering like "1. Astral" -> "Astral")
+        const cleanWord = (word: string): string => {
+          // Remove leading numbering pattern like "1. ", "2. ", etc.
+          return word.replace(/^\d+\.\s*/, '').trim();
+        };
+        
         for (let i = 1; i < jsonData.length; i++) {
           const row = jsonData[i] as any[];
           if (!row || row.length === 0) continue;
@@ -72,6 +86,12 @@ export const parseExcelFile = async (file: File): Promise<QuizRow[]> => {
           // Get values with fallback to empty string
           const teamValue = String(row[headerMap['Team']] || '').trim();
           const wordValue = String(row[headerMap['Word']] || '').trim();
+          const pronunciationValue = headerMap['Pronunciation'] !== undefined 
+            ? String(row[headerMap['Pronunciation']] || '').trim() 
+            : '';
+          const altPronunciationValue = headerMap['AlternativePronunciation'] !== undefined 
+            ? String(row[headerMap['AlternativePronunciation']] || '').trim() 
+            : '';
           const originValue = String(row[headerMap['WordOrigin']] || '').trim();
           const meaningValue = String(row[headerMap['Meaning']] || '').trim();
           const contextValue = String(row[headerMap['WordInContext']] || '').trim();
@@ -85,7 +105,9 @@ export const parseExcelFile = async (file: File): Promise<QuizRow[]> => {
           if (wordValue) {
             quizData.push({
               Team: currentTeam || teamValue || '',
-              Word: wordValue,
+              Word: cleanWord(wordValue), // Clean the word (remove numbering)
+              Pronunciation: pronunciationValue,
+              AlternativePronunciation: altPronunciationValue,
               WordOrigin: originValue,
               Meaning: meaningValue,
               WordInContext: contextValue
