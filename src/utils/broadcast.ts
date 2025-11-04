@@ -26,6 +26,7 @@ export interface QuizMessage {
     url: string;
     isPlaying: boolean;
     action?: 'play' | 'pause' | 'stop';
+    displayMode?: 'timer' | 'video';
   };
 }
 

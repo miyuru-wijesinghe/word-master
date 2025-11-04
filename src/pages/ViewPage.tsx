@@ -133,22 +133,75 @@ export const ViewPage: React.FC = () => {
           break;
         case 'video':
           if (message.videoData) {
-            setDisplayMode('video');
-            setVideoUrl(message.videoData.url);
-            
-            // Control video playback
-            if (videoRef.current) {
-              if (message.videoData.action === 'play') {
-                videoRef.current.play().catch(console.error);
-              } else if (message.videoData.action === 'pause') {
-                videoRef.current.pause();
-              } else if (message.videoData.action === 'stop') {
-                videoRef.current.pause();
-                videoRef.current.currentTime = 0;
-                setVideoUrl('');
-                setDisplayMode('timer');
+            // Update display mode if provided - this should happen first
+            if (message.videoData.displayMode) {
+              const newMode = message.videoData.displayMode;
+              setDisplayMode(newMode);
+              
+              // When switching to timer mode, clear timer-related states if no timer is running
+              if (newMode === 'timer') {
+                // When switching to timer mode, clear word unless timer just ended
+                // Timer running state will be updated by 'update' messages
+                setTimerEnded(false);
+                // Don't clear word here - it might be from a timer that just ended
+                // Only clear if it's a stop action
+                if (message.videoData.action === 'stop') {
+                  setWord('');
+                  setIsRunning(false);
+                  setIsPaused(false);
+                  setTimeLeft(60);
+                }
+              }
+              
+              // When switching to video mode, ensure timer states are cleared
+              if (newMode === 'video') {
+                setIsRunning(false);
+                setIsPaused(false);
+                setTimerEnded(false);
+                // Keep word cleared when switching to video
+                setWord('');
               }
             }
+            
+            // Update video URL
+            if (message.videoData.url !== undefined) {
+              setVideoUrl(message.videoData.url || '');
+            }
+            
+            // Control video playback - use setTimeout to ensure DOM is updated
+            setTimeout(() => {
+              const video = videoRef.current;
+              if (!video) return;
+              
+              if (message.videoData?.action === 'play') {
+                // Ensure video source is set
+                const urlToPlay = message.videoData.url || videoUrl;
+                if (urlToPlay && video.src !== urlToPlay) {
+                  video.src = urlToPlay;
+                  video.load();
+                }
+                // Wait for video to be ready before playing
+                if (video.readyState >= 2) {
+                  video.play().catch(console.error);
+                } else {
+                  const playWhenReady = () => {
+                    video.play().catch(console.error);
+                  };
+                  video.addEventListener('loadeddata', playWhenReady, { once: true });
+                  video.load();
+                }
+              } else if (message.videoData?.action === 'pause') {
+                video.pause();
+              } else if (message.videoData?.action === 'stop') {
+                video.pause();
+                video.currentTime = 0;
+                if (video.src) {
+                  video.src = '';
+                }
+                setVideoUrl('');
+                // displayMode is already set from message.videoData.displayMode above
+              }
+            }, 0);
           }
           break;
       }
@@ -156,6 +209,53 @@ export const ViewPage: React.FC = () => {
 
     return cleanup;
   }, []);
+
+  // Handle video URL changes and ensure video element is ready
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || displayMode !== 'video' || !videoUrl) return;
+
+    // Ensure video source is set when URL changes
+    if (video.src !== videoUrl) {
+      video.src = videoUrl;
+      video.load();
+    }
+  }, [videoUrl, displayMode]);
+
+  // Handle video end event - automatically close video screen when video ends
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || displayMode !== 'video') return;
+
+    const handleVideoEnd = () => {
+      // Clear video URL and reset display mode to timer
+      setVideoUrl('');
+      setDisplayMode('timer');
+      // Reset video to beginning
+      if (video) {
+        video.currentTime = 0;
+        if (video.src) {
+          video.src = '';
+        }
+      }
+      // Broadcast the mode change
+      broadcastManager.send({
+        type: 'video',
+        videoData: { 
+          url: '', 
+          isPlaying: false, 
+          action: 'stop',
+          displayMode: 'timer'
+        }
+      });
+    };
+
+    video.addEventListener('ended', handleVideoEnd);
+
+    return () => {
+      video.removeEventListener('ended', handleVideoEnd);
+    };
+  }, [videoUrl, displayMode]);
 
 
   const formatTime = (seconds: number) => {
@@ -200,7 +300,8 @@ export const ViewPage: React.FC = () => {
               ref={videoRef}
               src={videoUrl}
               className="w-full h-full object-contain"
-              autoPlay
+              playsInline
+              key={videoUrl}
             >
               Your browser does not support the video tag.
             </video>

@@ -103,6 +103,16 @@ export const ManageScreen: React.FC = () => {
       return;
     }
     
+    // Broadcast mode change to timer
+    broadcastManager.send({
+      type: 'video',
+      videoData: { 
+        url: '', 
+        isPlaying: false, 
+        displayMode: 'timer'
+      }
+    });
+    
     const message: QuizMessage = {
       type: 'control',
       control: {
@@ -180,12 +190,26 @@ export const ManageScreen: React.FC = () => {
             <button
               onClick={() => {
                 setDisplayMode('timer');
-                // Stop video if switching to timer
+                // Stop video if switching to timer and broadcast mode change
+                // Always broadcast mode change, even if no video is loaded
+                broadcastManager.send({
+                  type: 'video',
+                  videoData: { 
+                    url: '', 
+                    isPlaying: false, 
+                    action: 'stop',
+                    displayMode: 'timer'
+                  }
+                });
+                // Clear video state if switching to timer
                 if (videoObjectUrl || videoUrl) {
-                  broadcastManager.send({
-                    type: 'video',
-                    videoData: { url: '', isPlaying: false, action: 'stop' }
-                  });
+                  setIsVideoPlaying(false);
+                  setHasVideoPlayed(false);
+                  if (videoObjectUrl) {
+                    URL.revokeObjectURL(videoObjectUrl);
+                    setVideoObjectUrl('');
+                  }
+                  setVideoUrl('');
                 }
               }}
               className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 ${
@@ -203,6 +227,15 @@ export const ManageScreen: React.FC = () => {
                 if (isRunning || isPaused) {
                   handleEnd();
                 }
+                // Always broadcast mode change to video, even if no video is loaded yet
+                broadcastManager.send({
+                  type: 'video',
+                  videoData: { 
+                    url: videoObjectUrl || videoUrl || '', 
+                    isPlaying: false, 
+                    displayMode: 'video'
+                  }
+                });
               }}
               className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 ${
                 displayMode === 'video'
@@ -239,7 +272,11 @@ export const ManageScreen: React.FC = () => {
                     // Broadcast video loaded
                     broadcastManager.send({
                       type: 'video',
-                      videoData: { url: objectUrl, isPlaying: false }
+                      videoData: { 
+                        url: objectUrl, 
+                        isPlaying: false,
+                        displayMode: 'video'
+                      }
                     });
                   }
                 }}
@@ -261,7 +298,8 @@ export const ManageScreen: React.FC = () => {
                           videoData: { 
                             url: videoObjectUrl || videoUrl, 
                             isPlaying: true, 
-                            action: 'play' 
+                            action: 'play',
+                            displayMode: 'video'
                           }
                         });
                       } else {
@@ -271,7 +309,8 @@ export const ManageScreen: React.FC = () => {
                           videoData: { 
                             url: videoObjectUrl || videoUrl, 
                             isPlaying: false, 
-                            action: 'pause' 
+                            action: 'pause',
+                            displayMode: 'video'
                           }
                         });
                       }
@@ -299,7 +338,12 @@ export const ManageScreen: React.FC = () => {
                       }
                       broadcastManager.send({
                         type: 'video',
-                        videoData: { url: '', isPlaying: false, action: 'stop' }
+                        videoData: { 
+                          url: '', 
+                          isPlaying: false, 
+                          action: 'stop',
+                          displayMode: 'timer'
+                        }
                       });
                     }}
                     className="px-8 py-4 rounded-xl font-bold text-lg transition-all duration-200 transform bg-red-600 hover:bg-red-700 text-white hover:scale-110 shadow-xl hover:shadow-2xl"
