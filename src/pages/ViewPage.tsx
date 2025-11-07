@@ -281,7 +281,7 @@ export const ViewPage: React.FC = () => {
       {/* Header */}
       <div className="bg-slate-800 py-4 px-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">APIIT SPELL MASTER</h1>
+          <h1 className="text-2xl font-bold">APIIT SPELL BEE</h1>
           <Link
             to="/"
             className="bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg transition-colors text-sm"

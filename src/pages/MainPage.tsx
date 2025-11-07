@@ -31,7 +31,7 @@ export const MainPage: React.FC = () => {
       
       <div className="text-center max-w-2xl relative z-20">
         <h1 className="text-6xl font-bold text-white mb-12 drop-shadow-lg">
-          APIIT SPELL MASTER
+        APIIT SPELL BEE
         </h1>
         
         <div className="space-y-4 mb-12">
