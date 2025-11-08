@@ -21,31 +21,7 @@ export const Timer: React.FC<TimerProps> = ({
 }) => {
   const [timeLeft, setTimeLeft] = useState(duration);
   const intervalRef = useRef<number | null>(null);
-  const lastSpokenRef = useRef<number>(-1);
-
-  const speakTime = (time: number) => {
-    if ('speechSynthesis' in window) {
-      // Cancel any ongoing speech
-      speechSynthesis.cancel();
-      
-      const utterance = new SpeechSynthesisUtterance(time.toString());
-      utterance.rate = 0.8;
-      utterance.volume = 0.8;
-      utterance.pitch = 1.0;
-      
-      // Use a more natural voice if available
-      const voices = speechSynthesis.getVoices();
-      const preferredVoice = voices.find(voice => 
-        voice.lang.startsWith('en') && voice.name.includes('Google')
-      ) || voices.find(voice => voice.lang.startsWith('en'));
-      
-      if (preferredVoice) {
-        utterance.voice = preferredVoice;
-      }
-      
-      speechSynthesis.speak(utterance);
-    }
-  };
+  const lastBeepRef = useRef<number>(-1);
 
   useEffect(() => {
     if (isRunning && !isPaused) {
@@ -53,19 +29,19 @@ export const Timer: React.FC<TimerProps> = ({
         setTimeLeft(prev => {
           const newTime = prev - 1;
           
-          // Only control panel handles speech and broadcasts it
+          // Only control panel handles beeps and broadcasts it
           if (isControlPanel) {
-            // Speech announcements with better timing
+            // Beep sound announcements (replacing voice)
             if (newTime === 50 || newTime === 40 || newTime === 30 || newTime === 20 || newTime === 10) {
-              speakTime(newTime);
+              soundManager.playCountdownBeep();
               soundManager.playWarningSound();
-              // Broadcast speech to display screen
+              // Broadcast beep to display screen
               broadcastManager.sendSpeech(newTime, true);
-            } else if (newTime <= 10 && newTime > 0 && lastSpokenRef.current !== newTime) {
-              speakTime(newTime);
+            } else if (newTime <= 10 && newTime > 0 && lastBeepRef.current !== newTime) {
+              soundManager.playCountdownBeep();
               soundManager.playTickSound();
-              lastSpokenRef.current = newTime;
-              // Broadcast speech to display screen
+              lastBeepRef.current = newTime;
+              // Broadcast beep to display screen
               broadcastManager.sendSpeech(newTime, true);
             }
           }
@@ -73,6 +49,10 @@ export const Timer: React.FC<TimerProps> = ({
           onTick(newTime);
           
           if (newTime <= 0) {
+            // Play longer beep when timer ends
+            if (isControlPanel) {
+              soundManager.playTimerEndBeep();
+            }
             onEnd();
             return 0;
           }
@@ -96,7 +76,7 @@ export const Timer: React.FC<TimerProps> = ({
 
   useEffect(() => {
     setTimeLeft(duration);
-    lastSpokenRef.current = -1;
+    lastBeepRef.current = -1;
   }, [duration]);
 
   const formatTime = (seconds: number) => {

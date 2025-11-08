@@ -64,6 +64,18 @@ export class SoundManager {
     this.playTone(1000, 0.1);
     setTimeout(() => this.playTone(1000, 0.1), 150);
   }
+
+  public playCountdownBeep() {
+    // Short beep for countdown milestones
+    this.playTone(800, 0.15);
+  }
+
+  public playTimerEndBeep() {
+    // Longer beep when timer ends
+    this.playTone(600, 0.8);
+    setTimeout(() => this.playTone(500, 0.8), 200);
+    setTimeout(() => this.playTone(400, 0.8), 400);
+  }
 }
 
 export const soundManager = SoundManager.getInstance();

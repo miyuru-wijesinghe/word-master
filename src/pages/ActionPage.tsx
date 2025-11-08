@@ -89,7 +89,7 @@ export const ActionPage: React.FC = () => {
                 setTimeLeft(duration);
                 setIsRunning(true);
                 setIsPaused(false);
-                lastSpokenRef.current = -1; // Reset speech tracking when timer starts
+                lastBeepRef.current = -1; // Reset beep tracking when timer starts
                 
                 soundManager.playStartSound();
                 
@@ -198,40 +198,56 @@ export const ActionPage: React.FC = () => {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
-      // Only handle shortcuts when not typing in input fields
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+      // Ignore key repeat events (when key is held down)
+      if (event.repeat) {
         return;
       }
 
-      switch (event.key.toLowerCase()) {
+      // Only handle shortcuts when Ctrl/Cmd is pressed
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+
+      // Only handle shortcuts when not typing in input fields
+      const target = event.target as HTMLElement;
+      if (
+        target instanceof HTMLInputElement || 
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target.isContentEditable ||
+        target.tagName === 'BUTTON' ||
+        target.tagName === 'A'
+      ) {
+        return;
+      }
+
+      // Only handle specific shortcut keys
+      const key = event.key.toLowerCase();
+      if (key !== 's' && key !== 'p' && key !== 'e' && key !== 'u') {
+        return;
+      }
+
+      // Prevent default only for our shortcuts
+      event.preventDefault();
+      event.stopPropagation();
+
+      switch (key) {
         case 's':
-          if (event.ctrlKey || event.metaKey) {
-            event.preventDefault();
-            handleStart();
-          }
+          handleStart();
           break;
         case 'p':
-          if (event.ctrlKey || event.metaKey) {
-            event.preventDefault();
-            handlePause();
-          }
+          handlePause();
           break;
         case 'e':
-          if (event.ctrlKey || event.metaKey) {
-            event.preventDefault();
-            handleEnd();
-          }
+          handleEnd();
           break;
         case 'u':
-          if (event.ctrlKey || event.metaKey) {
-            event.preventDefault();
-            fileInputRef.current?.click();
-          }
+          fileInputRef.current?.click();
           break;
       }
     };
 
-    window.addEventListener('keydown', handleKeyPress);
+    window.addEventListener('keydown', handleKeyPress, { passive: false });
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [selectedRows, isRunning, isPaused]);
 
@@ -352,61 +368,12 @@ export const ActionPage: React.FC = () => {
     broadcastManager.send(message);
   };
 
-  // Ref to track last spoken time
-  const lastSpokenRef = useRef<number>(-1);
+  // Ref to track last beep time
+  const lastBeepRef = useRef<number>(-1);
   
   // Timer interval - runs when timer is active
   useEffect(() => {
     let intervalId: number | null = null;
-    
-    const speakTime = (time: number) => {
-      if ('speechSynthesis' in window) {
-        // Cancel any ongoing speech
-        speechSynthesis.cancel();
-        
-        // Wait a bit for cancel to take effect
-        setTimeout(() => {
-          const utterance = new SpeechSynthesisUtterance(time.toString());
-          utterance.rate = 0.8;
-          utterance.volume = 1.0; // Full volume
-          utterance.pitch = 1.0;
-          
-          // Get voices - may need to load first
-          const getVoices = () => {
-            let voices = speechSynthesis.getVoices();
-            if (voices.length === 0) {
-              // Voices not loaded yet, wait for voiceschanged event
-              return new Promise<SpeechSynthesisVoice[]>((resolve) => {
-                const handler = () => {
-                  voices = speechSynthesis.getVoices();
-                  speechSynthesis.onvoiceschanged = null;
-                  resolve(voices);
-                };
-                speechSynthesis.onvoiceschanged = handler;
-                // Fallback timeout
-                setTimeout(() => {
-                  speechSynthesis.onvoiceschanged = null;
-                  resolve([]);
-                }, 1000);
-              });
-            }
-            return Promise.resolve(voices);
-          };
-          
-          getVoices().then((voices) => {
-            const preferredVoice = voices.find(voice => 
-              voice.lang.startsWith('en') && (voice.name.includes('Google') || voice.name.includes('Microsoft'))
-            ) || voices.find(voice => voice.lang.startsWith('en'));
-            
-            if (preferredVoice) {
-              utterance.voice = preferredVoice;
-            }
-            
-            speechSynthesis.speak(utterance);
-          });
-        }, 50);
-      }
-    };
     
     if (isRunning && !isPaused) {
       intervalId = window.setInterval(() => {
@@ -414,7 +381,8 @@ export const ActionPage: React.FC = () => {
           const newTime = prev - 1;
           
           if (newTime <= 0) {
-            // Timer ended - update state and broadcast
+            // Timer ended - play longer beep and update state
+            soundManager.playTimerEndBeep();
             setIsRunning(false);
             setIsPaused(false);
             setStartedRow(null);
@@ -438,18 +406,18 @@ export const ActionPage: React.FC = () => {
             return 0;
           }
           
-          // Speech and sound announcements
+          // Beep sound announcements (replacing voice)
           if (newTime === 50 || newTime === 40 || newTime === 30 || newTime === 20 || newTime === 10) {
-            if (lastSpokenRef.current !== newTime) {
-              speakTime(newTime);
+            if (lastBeepRef.current !== newTime) {
+              soundManager.playCountdownBeep();
               soundManager.playWarningSound();
               broadcastManager.sendSpeech(newTime, true);
-              lastSpokenRef.current = newTime;
+              lastBeepRef.current = newTime;
             }
-          } else if (newTime <= 10 && newTime > 0 && lastSpokenRef.current !== newTime) {
-            speakTime(newTime);
+          } else if (newTime <= 10 && newTime > 0 && lastBeepRef.current !== newTime) {
+            soundManager.playCountdownBeep();
             soundManager.playTickSound();
-            lastSpokenRef.current = newTime;
+            lastBeepRef.current = newTime;
             broadcastManager.sendSpeech(newTime, true);
           }
           

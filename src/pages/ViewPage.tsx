@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { broadcastManager } from '../utils/broadcast';
 import type { QuizMessage } from '../utils/broadcast';
+import { soundManager } from '../utils/soundManager';
 
 export const ViewPage: React.FC = () => {
   const [word, setWord] = useState('');
@@ -9,59 +10,13 @@ export const ViewPage: React.FC = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [timerEnded, setTimerEnded] = useState(false);
+  const [showWord, setShowWord] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [displayMode, setDisplayMode] = useState<'timer' | 'video'>('timer');
   const videoRef = useRef<HTMLVideoElement>(null);
-  const lastSpokenRef = useRef<number>(-1);
-
-  const speakTime = (time: number) => {
-    if ('speechSynthesis' in window) {
-      // Cancel any ongoing speech
-      speechSynthesis.cancel();
-      
-      // Wait a bit for cancel to take effect
-      setTimeout(() => {
-        const utterance = new SpeechSynthesisUtterance(time.toString());
-        utterance.rate = 0.8;
-        utterance.volume = 1.0; // Full volume
-        utterance.pitch = 1.0;
-        
-        // Get voices - may need to load first
-        const getVoices = () => {
-          let voices = speechSynthesis.getVoices();
-          if (voices.length === 0) {
-            // Voices not loaded yet, wait for voiceschanged event
-            return new Promise<SpeechSynthesisVoice[]>((resolve) => {
-              const handler = () => {
-                voices = speechSynthesis.getVoices();
-                speechSynthesis.onvoiceschanged = null;
-                resolve(voices);
-              };
-              speechSynthesis.onvoiceschanged = handler;
-              // Fallback timeout
-              setTimeout(() => {
-                speechSynthesis.onvoiceschanged = null;
-                resolve([]);
-              }, 1000);
-            });
-          }
-          return Promise.resolve(voices);
-        };
-        
-        getVoices().then((voices) => {
-          const preferredVoice = voices.find(voice => 
-            voice.lang.startsWith('en') && (voice.name.includes('Google') || voice.name.includes('Microsoft'))
-          ) || voices.find(voice => voice.lang.startsWith('en'));
-          
-          if (preferredVoice) {
-            utterance.voice = preferredVoice;
-          }
-          
-          speechSynthesis.speak(utterance);
-        });
-      }, 50);
-    }
-  };
+  const lastBeepRef = useRef<number>(-1);
+  const wordTimeoutRef = useRef<number | null>(null);
+  const hideWordTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const cleanup = broadcastManager.listen((message: QuizMessage) => {
@@ -83,11 +38,11 @@ export const ViewPage: React.FC = () => {
           break;
         case 'speech':
           if (message.speechData && message.speechData.shouldSpeak) {
-            const timeToSpeak = message.speechData.timeLeft;
-            // Only speak if we haven't spoken this time yet
-            if (lastSpokenRef.current !== timeToSpeak) {
-              speakTime(timeToSpeak);
-              lastSpokenRef.current = timeToSpeak;
+            const timeToBeep = message.speechData.timeLeft;
+            // Only beep if we haven't beeped this time yet
+            if (lastBeepRef.current !== timeToBeep) {
+              soundManager.playCountdownBeep();
+              lastBeepRef.current = timeToBeep;
             }
           }
           break;
@@ -96,40 +51,70 @@ export const ViewPage: React.FC = () => {
           setIsRunning(false);
           break;
         case 'end':
-          // If word is provided in end message, timer ended naturally - show word
+          // Clear any existing timeouts
+          if (wordTimeoutRef.current !== null) {
+            clearTimeout(wordTimeoutRef.current);
+            wordTimeoutRef.current = null;
+          }
+          if (hideWordTimeoutRef.current !== null) {
+            clearTimeout(hideWordTimeoutRef.current);
+            hideWordTimeoutRef.current = null;
+          }
+          
+          // If word is provided in end message, timer ended naturally - show word after delay
           // If no word in end message, End button was pressed - reset to default
           if (message.data && message.data.word) {
-            // Timer ended naturally - show word
+            // Timer ended naturally - play longer beep
+            soundManager.playTimerEndBeep();
             setTimerEnded(true);
             setWord(message.data.word);
             setIsRunning(false);
             setIsPaused(false);
+            setShowWord(false); // Don't show word immediately
+            
+            // Wait 3 seconds before showing the word
+            wordTimeoutRef.current = window.setTimeout(() => {
+              setShowWord(true);
+              wordTimeoutRef.current = null;
+              
+              // After showing word, wait 5 seconds then hide it
+              hideWordTimeoutRef.current = window.setTimeout(() => {
+                setShowWord(false);
+                setWord('');
+                setTimerEnded(false);
+                hideWordTimeoutRef.current = null;
+              }, 5000);
+            }, 3000);
           } else {
             // End button was pressed - reset to default
             setTimerEnded(false);
+            setShowWord(false);
             setIsRunning(false);
             setIsPaused(false);
             setWord('');
             setTimeLeft(60);
           }
-          lastSpokenRef.current = -1;
-          if ('speechSynthesis' in window) {
-            speechSynthesis.cancel();
-          }
+          lastBeepRef.current = -1;
           break;
         case 'clear':
+          // Clear any existing timeouts
+          if (wordTimeoutRef.current !== null) {
+            clearTimeout(wordTimeoutRef.current);
+            wordTimeoutRef.current = null;
+          }
+          if (hideWordTimeoutRef.current !== null) {
+            clearTimeout(hideWordTimeoutRef.current);
+            hideWordTimeoutRef.current = null;
+          }
           setWord('');
           setTimeLeft(60);
           setIsRunning(false);
           setIsPaused(false);
           setTimerEnded(false);
+          setShowWord(false);
           setVideoUrl('');
           setDisplayMode('timer');
-          lastSpokenRef.current = -1;
-          // Cancel any ongoing speech
-          if ('speechSynthesis' in window) {
-            speechSynthesis.cancel();
-          }
+          lastBeepRef.current = -1;
           break;
         case 'video':
           if (message.videoData) {
@@ -143,9 +128,19 @@ export const ViewPage: React.FC = () => {
                 // When switching to timer mode, clear word unless timer just ended
                 // Timer running state will be updated by 'update' messages
                 setTimerEnded(false);
+                setShowWord(false);
                 // Don't clear word here - it might be from a timer that just ended
                 // Only clear if it's a stop action
                 if (message.videoData.action === 'stop') {
+                  // Clear any existing timeouts
+                  if (wordTimeoutRef.current !== null) {
+                    clearTimeout(wordTimeoutRef.current);
+                    wordTimeoutRef.current = null;
+                  }
+                  if (hideWordTimeoutRef.current !== null) {
+                    clearTimeout(hideWordTimeoutRef.current);
+                    hideWordTimeoutRef.current = null;
+                  }
                   setWord('');
                   setIsRunning(false);
                   setIsPaused(false);
@@ -155,9 +150,19 @@ export const ViewPage: React.FC = () => {
               
               // When switching to video mode, ensure timer states are cleared
               if (newMode === 'video') {
+                // Clear any existing timeouts
+                if (wordTimeoutRef.current !== null) {
+                  clearTimeout(wordTimeoutRef.current);
+                  wordTimeoutRef.current = null;
+                }
+                if (hideWordTimeoutRef.current !== null) {
+                  clearTimeout(hideWordTimeoutRef.current);
+                  hideWordTimeoutRef.current = null;
+                }
                 setIsRunning(false);
                 setIsPaused(false);
                 setTimerEnded(false);
+                setShowWord(false);
                 // Keep word cleared when switching to video
                 setWord('');
               }
@@ -257,6 +262,18 @@ export const ViewPage: React.FC = () => {
     };
   }, [videoUrl, displayMode]);
 
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (wordTimeoutRef.current !== null) {
+        clearTimeout(wordTimeoutRef.current);
+      }
+      if (hideWordTimeoutRef.current !== null) {
+        clearTimeout(hideWordTimeoutRef.current);
+      }
+    };
+  }, []);
+
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -276,8 +293,39 @@ export const ViewPage: React.FC = () => {
     return 'text-gray-500';
   };
 
+  // Prevent unwanted keyboard input on ViewPage
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Only prevent default for keys that might cause issues
+      // Allow normal typing in any input fields
+      const target = event.target as HTMLElement;
+      
+      // If user is typing in an input field, allow it
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+      
+      // Prevent key repeat events from causing issues
+      if (event.repeat) {
+        // Only prevent if it's a problematic key
+        if (event.key === 'd' || event.key === 'D') {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, { passive: false });
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex flex-col">
+    <div className="min-h-screen bg-slate-900 text-white flex flex-col" tabIndex={-1}>
       {/* Header */}
       <div className="bg-slate-800 py-4 px-6">
         <div className="flex justify-between items-center">
@@ -302,6 +350,7 @@ export const ViewPage: React.FC = () => {
               className="w-full h-full object-contain"
               playsInline
               key={videoUrl}
+              tabIndex={-1}
             >
               Your browser does not support the video tag.
             </video>
@@ -314,8 +363,8 @@ export const ViewPage: React.FC = () => {
               Select a video in Manage Screen
             </p>
           </div>
-        ) : displayMode === 'timer' && word && timerEnded ? (
-          /* Show word ONLY after timer ends (timerEnded === true) */
+        ) : displayMode === 'timer' && word && timerEnded && showWord ? (
+          /* Show word ONLY after timer ends AND after 3 second delay */
           <div className="text-center max-w-4xl mx-auto">
             <div className="mb-16">
               <h2 className="text-5xl font-bold text-green-400 mb-6">Word</h2>
@@ -326,6 +375,15 @@ export const ViewPage: React.FC = () => {
                 Timer Ended
               </div>
             </div>
+          </div>
+        ) : displayMode === 'timer' && timerEnded && !showWord ? (
+          /* Show waiting message during 3 second delay after timer ends */
+          <div className="text-center">
+            <div className="text-8xl mb-8">⏳</div>
+            <h2 className="text-6xl font-bold text-slate-400 mb-4">Timer Ended</h2>
+            <p className="text-3xl text-slate-500">
+              Word will appear shortly...
+            </p>
           </div>
         ) : displayMode === 'timer' && (isRunning || isPaused) ? (
           /* Show ONLY timer when running or paused - word is always hidden during countdown */
