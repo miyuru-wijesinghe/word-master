@@ -61,10 +61,10 @@ export const ViewPage: React.FC = () => {
             hideWordTimeoutRef.current = null;
           }
           
-          // If word is provided in end message, timer ended naturally - show word after delay
-          // If no word in end message, End button was pressed - reset to default
+          // If word is provided in end message, show word after delay (same process for natural end or End button)
+          // If no word in end message, reset to default
           if (message.data && message.data.word) {
-            // Timer ended naturally - play longer beep
+            // Timer ended (naturally or via End button) - play beep and show word
             soundManager.playTimerEndBeep();
             setTimerEnded(true);
             setWord(message.data.word);
@@ -72,19 +72,19 @@ export const ViewPage: React.FC = () => {
             setIsPaused(false);
             setShowWord(false); // Don't show word immediately
             
-            // Wait 3 seconds before showing the word
+            // Wait 5 seconds before showing the word
             wordTimeoutRef.current = window.setTimeout(() => {
               setShowWord(true);
               wordTimeoutRef.current = null;
               
-              // After showing word, wait 5 seconds then hide it
+              // After showing word, wait 8 seconds then hide it
               hideWordTimeoutRef.current = window.setTimeout(() => {
                 setShowWord(false);
                 setWord('');
                 setTimerEnded(false);
                 hideWordTimeoutRef.current = null;
-              }, 5000);
-            }, 3000);
+              }, 8000);
+            }, 5000);
           } else {
             // End button was pressed - reset to default
             setTimerEnded(false);
@@ -364,7 +364,7 @@ export const ViewPage: React.FC = () => {
             </p>
           </div>
         ) : displayMode === 'timer' && word && timerEnded && showWord ? (
-          /* Show word ONLY after timer ends AND after 3 second delay */
+          /* Show word ONLY after timer ends AND after 5 second delay */
           <div className="text-center max-w-4xl mx-auto">
             <div className="mb-16">
               <h2 className="text-5xl font-bold text-green-400 mb-6">Word</h2>
@@ -377,7 +377,7 @@ export const ViewPage: React.FC = () => {
             </div>
           </div>
         ) : displayMode === 'timer' && timerEnded && !showWord ? (
-          /* Show waiting message during 3 second delay after timer ends */
+          /* Show waiting message during 5 second delay after timer ends */
           <div className="text-center">
             <div className="text-8xl mb-8">⏳</div>
             <h2 className="text-6xl font-bold text-slate-400 mb-4">Timer Ended</h2>

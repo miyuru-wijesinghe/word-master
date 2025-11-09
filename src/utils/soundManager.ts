@@ -23,7 +23,7 @@ export class SoundManager {
     }
   }
 
-  private playTone(frequency: number, duration: number, type: OscillatorType = 'sine') {
+  private playTone(frequency: number, duration: number, type: OscillatorType = 'sine', volume: number = 0.3) {
     if (!this.audioContext) return;
 
     const oscillator = this.audioContext.createOscillator();
@@ -35,7 +35,7 @@ export class SoundManager {
     oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
     oscillator.type = type;
 
-    gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+    gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
     gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
 
     oscillator.start(this.audioContext.currentTime);
@@ -71,10 +71,8 @@ export class SoundManager {
   }
 
   public playTimerEndBeep() {
-    // Longer beep when timer ends
-    this.playTone(600, 0.8);
-    setTimeout(() => this.playTone(500, 0.8), 200);
-    setTimeout(() => this.playTone(400, 0.8), 400);
+    // Simple beep sound when timer ends - louder volume and longer duration
+    this.playTone(600, 0.8, 'sine', 0.6);
   }
 }
 

@@ -146,6 +146,9 @@ export const ActionPage: React.FC = () => {
             });
             break;
           case 'end':
+            // Get current word before clearing it
+            const wordToShow = currentWord || (startedRow !== null && quizData[startedRow] ? quizData[startedRow].Word : '');
+            
             setIsRunning(false);
             setIsPaused(false);
             setTimeLeft(60);
@@ -153,10 +156,17 @@ export const ActionPage: React.FC = () => {
             setCurrentWord('');
             setStartedRow(null);
             
-            soundManager.playEndSound();
+            // Play timer end beep (same as natural timer end)
+            soundManager.playTimerEndBeep();
             
             const endMessage: QuizMessage = {
               type: 'end',
+              data: {
+                student: '',
+                word: wordToShow,
+                timeLeft: 0,
+                isRunning: false
+              },
               selectedEntries: selectedRows.map(i => ({
                 word: quizData[i].Word,
                 team: quizData[i].Team
@@ -346,6 +356,9 @@ export const ActionPage: React.FC = () => {
   };
 
   const handleEnd = () => {
+    // Get current word before clearing it
+    const wordToShow = currentWord || (startedRow !== null && quizData[startedRow] ? quizData[startedRow].Word : '');
+    
     setIsRunning(false);
     setIsPaused(false);
     setTimeLeft(60);
@@ -354,12 +367,18 @@ export const ActionPage: React.FC = () => {
     setStartedRow(null);
     // Don't clear selectedRows - keep them for manage screen
 
-    // Play end sound
-    soundManager.playEndSound();
+    // Play timer end beep (same as natural timer end)
+    soundManager.playTimerEndBeep();
 
-    // Broadcast end to view page and manage screen (with current selected entries)
+    // Broadcast end to view page and manage screen (with current word and selected entries)
     const message: QuizMessage = {
       type: 'end',
+      data: {
+        student: '',
+        word: wordToShow,
+        timeLeft: 0,
+        isRunning: false
+      },
       selectedEntries: selectedRows.map(i => ({
         word: quizData[i].Word,
         team: quizData[i].Team
