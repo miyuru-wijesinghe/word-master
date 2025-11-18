@@ -48,6 +48,7 @@ export const ViewPage: React.FC = () => {
       resultDelayTimeoutRef.current = null;
 
       resultHideTimeoutRef.current = window.setTimeout(() => {
+        soundManager.playWordClearBeep();
         setIsResultVisible(false);
         setPendingWord('');
         setJudgeResult(null);
@@ -219,6 +220,19 @@ export const ViewPage: React.FC = () => {
     return cleanup;
   }, []);
 
+  // Announce result verdict when result becomes visible
+  useEffect(() => {
+    if (isResultVisible && judgeResult && 'speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(
+        judgeResult.isCorrect ? 'Correct' : 'Incorrect'
+      );
+      utterance.rate = 0.9;
+      utterance.pitch = 1.1;
+      utterance.volume = 0.8;
+      window.speechSynthesis.speak(utterance);
+    }
+  }, [isResultVisible, judgeResult]);
+
   // Handle video URL changes and ensure video element is ready
   useEffect(() => {
     const video = videoRef.current;
@@ -328,7 +342,7 @@ export const ViewPage: React.FC = () => {
       {/* Header */}
       <div className="bg-slate-800 py-4 px-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">APIIT SPELL BEE</h1>
+          <h1 className="text-2xl font-bold">APIIT SPELLING BEE</h1>
           <Link
             to="/"
             className="bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg transition-colors text-sm"
@@ -391,10 +405,7 @@ export const ViewPage: React.FC = () => {
         ) : (
           <div className="text-center">
             <div className="text-8xl mb-8">🎯</div>
-            <h2 className="text-6xl font-bold text-slate-400 mb-4">Waiting for the Word</h2>
-            <p className="text-3xl text-slate-500">
-            🐝Get Set...The Next Word’s Coming!
-            </p>
+            <h2 className="text-6xl font-bold text-slate-400 mb-4">🐝Get Set...The Next Word’s Coming!</h2>
           </div>
         )}
       </div>
@@ -409,8 +420,15 @@ export const ViewPage: React.FC = () => {
                 : 'bg-slate-900/40 border-white/10'
             }`}
           >
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-              <h3 className="text-3xl font-bold">Latest Result</h3>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+              <div className="text-left">
+                <h3 className="text-3xl font-bold">Latest Result</h3>
+                {judgeResult && (
+                  <p className={`text-2xl font-semibold mt-2 ${judgeResult.isCorrect ? 'text-green-300' : 'text-red-300'}`}>
+                    {judgeResult.isCorrect ? 'Your word is correct!' : 'Your word is incorrect.'}
+                  </p>
+                )}
+              </div>
               {judgeResult && (
                 <span
                   className={`px-6 py-2 rounded-full text-xl font-semibold ${
@@ -422,16 +440,24 @@ export const ViewPage: React.FC = () => {
               )}
             </div>
             <div className="grid gap-6 md:grid-cols-2 text-left">
-              <div className="bg-slate-900/40 rounded-2xl p-5 border border-white/10">
-                <p className="text-sm uppercase tracking-widest text-slate-400 mb-2">Correct Word</p>
-                <p className="text-4xl font-bold break-words">
+              <div
+                className={`rounded-2xl p-6 border-2 shadow-2xl ${
+                  judgeResult
+                    ? judgeResult.isCorrect
+                      ? 'bg-gradient-to-br from-emerald-900/70 via-emerald-950 to-slate-950 border-emerald-400/60'
+                      : 'bg-gradient-to-br from-rose-900/70 via-rose-950 to-slate-950 border-rose-400/60'
+                    : 'bg-gradient-to-br from-slate-900 via-slate-950 to-black border-white/10'
+                }`}
+              >
+                <p className="text-2xl md:text-3xl font-bold uppercase tracking-wider text-slate-200 mb-3">Correct Word</p>
+                <p className="text-6xl md:text-7xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(255,255,255,0.25)]">
                   {pendingWord || judgeResult?.actualWord || ''}
                 </p>
               </div>
               {judgeResult && (
-                <div className="bg-slate-900/40 rounded-2xl p-5 border border-white/10">
-                  <p className="text-sm uppercase tracking-widest text-slate-400 mb-2">Typed Word</p>
-                  <p className="text-4xl font-bold break-words">
+                <div className="rounded-2xl p-6 border-2 shadow-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-black border-indigo-400/60">
+                  <p className="text-2xl md:text-3xl font-bold uppercase tracking-wider text-slate-200 mb-3">Spelled Word</p>
+                  <p className="text-6xl md:text-7xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(129,140,248,0.4)]">
                     {judgeResult.typedWord || ''}
                   </p>
                 </div>

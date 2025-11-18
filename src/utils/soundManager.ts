@@ -86,6 +86,12 @@ export class SoundManager {
     this.playTone(200, 0.35, 'sawtooth', 0.5);
     setTimeout(() => this.playTone(160, 0.4, 'sawtooth', 0.4), 220);
   }
+
+  public playWordClearBeep() {
+    // Subtle cue when the word/result screen clears
+    this.playTone(700, 0.2, 'square', 0.45);
+    setTimeout(() => this.playTone(520, 0.25, 'triangle', 0.4), 160);
+  }
 }
 
 export const soundManager = SoundManager.getInstance();
