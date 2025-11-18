@@ -12,7 +12,7 @@ const normalizeWord = (value: string) =>
 export const JudgePage: React.FC = () => {
   const [currentWord, setCurrentWord] = useState('');
   const [typedWord, setTypedWord] = useState('');
-  const [timeLeft, setTimeLeft] = useState(60);
+  const [timeLeft, setTimeLeft] = useState(0);
   const [status, setStatus] = useState<'waiting' | 'running' | 'paused'>('waiting');
   const [autoSubmitPending, setAutoSubmitPending] = useState(false);
 
@@ -40,7 +40,8 @@ export const JudgePage: React.FC = () => {
     const resolvedWord = (actualWord && actualWord.trim()) || currentWordRef.current.trim();
     if (!resolvedWord) return;
 
-    const capturedTyped = typedWordRef.current.trim();
+    const capturedTyped =
+      trigger === 'manual' ? typedWord.trim() : typedWordRef.current.trim();
     const normalizedActual = normalizeWord(resolvedWord);
     const normalizedTyped = normalizeWord(capturedTyped);
     const isCorrect =
