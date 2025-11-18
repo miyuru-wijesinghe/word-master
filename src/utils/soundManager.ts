@@ -88,9 +88,10 @@ export class SoundManager {
   }
 
   public playWordClearBeep() {
-    // Subtle cue when the word/result screen clears
-    this.playTone(700, 0.2, 'square', 0.45);
-    setTimeout(() => this.playTone(520, 0.25, 'triangle', 0.4), 160);
+    // Longer, louder cue when the latest result card fades out
+    this.playTone(760, 0.55, 'triangle', 0.8);
+    setTimeout(() => this.playTone(560, 0.6, 'square', 0.75), 420);
+    setTimeout(() => this.playTone(420, 0.65, 'sine', 0.7), 900);
   }
 }
 

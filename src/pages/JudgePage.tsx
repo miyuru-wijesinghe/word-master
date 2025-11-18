@@ -77,6 +77,11 @@ export const JudgePage: React.FC = () => {
           }
         });
       }
+
+      setStatus('waiting');
+      setTimeLeft(0);
+      setCurrentWord('');
+      setTypedWord('');
     }
 
     setAutoSubmitPending(false);

@@ -25,14 +25,15 @@ export const ManageScreen: React.FC = () => {
   const [displayMode, setDisplayMode] = useState<'timer' | 'video'>('timer'); // Track which mode is active
   const timerActiveRef = useRef(false);
 
-  const resetAfterEnd = () => {
+  const resetAfterEnd = (options?: { keepWord?: boolean }) => {
     setTimerEnded(false);
-    setCurrentWord('');
+    if (!options?.keepWord) {
+      setCurrentWord('');
+    }
     setHasStarted(false);
-    setSelectedDuration(null);
     setIsRunning(false);
     setIsPaused(false);
-    setTimeLeft(60);
+    setTimeLeft(0);
   };
 
   useEffect(() => {
