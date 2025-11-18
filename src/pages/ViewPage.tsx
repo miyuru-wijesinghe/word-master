@@ -108,6 +108,7 @@ export const ViewPage: React.FC = () => {
           break;
         case 'clear':
           clearResultTimers();
+          soundManager.playWordClearBeep();
           setPendingWord('');
           setTimeLeft(60);
           setIsRunning(false);
@@ -121,6 +122,7 @@ export const ViewPage: React.FC = () => {
           break;
         case 'video':
           if (message.videoData) {
+            let shouldPlayCloseBeep = false;
             // Update display mode if provided - this should happen first
             if (message.videoData.displayMode) {
               const newMode = message.videoData.displayMode;
@@ -146,6 +148,7 @@ export const ViewPage: React.FC = () => {
               
               // When switching to video mode, ensure timer states are cleared
               if (newMode === 'video') {
+                shouldPlayCloseBeep = true;
                 clearResultTimers();
                 setIsRunning(false);
                 setIsPaused(false);
@@ -193,7 +196,13 @@ export const ViewPage: React.FC = () => {
                   video.src = '';
                 }
                 setVideoUrl('');
+                shouldPlayCloseBeep = true;
                 // displayMode is already set from message.videoData.displayMode above
+              }
+
+              if (shouldPlayCloseBeep) {
+                soundManager.playWordClearBeep();
+                shouldPlayCloseBeep = false;
               }
             }, 0);
           }
@@ -412,7 +421,7 @@ export const ViewPage: React.FC = () => {
       {displayMode === 'timer' && isResultVisible && (
         <div className="px-8 pb-10">
           <div
-            className={`max-w-4xl mx-auto rounded-3xl border-2 p-6 text-center ${
+            className={`max-w-6xl mx-auto rounded-3xl border-2 p-6 text-center ${
               judgeResult
                 ? judgeResult.isCorrect
                   ? 'bg-green-900/40 border-green-500 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
