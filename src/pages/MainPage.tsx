@@ -55,6 +55,13 @@ export const MainPage: React.FC = () => {
           >
             📊 Manage Screen
           </Link>
+
+          <Link
+            to="/judge"
+            className="block w-full max-w-sm mx-auto bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-4 px-8 rounded-xl text-lg transition-all duration-200 hover:scale-105 shadow-lg"
+          >
+            ⚖️ Judge Console
+          </Link>
         </div>
         
         <div className="bg-white bg-opacity-95 p-6 rounded-xl shadow-sm text-left mb-6">
@@ -62,9 +69,10 @@ export const MainPage: React.FC = () => {
           <ol className="space-y-2 text-slate-600">
             <li><strong>1.</strong> Open Control Panel in one tab</li>
             <li><strong>2.</strong> Open Display Screen in another tab</li>
-            <li><strong>3.</strong> Upload Excel file with student names and words</li>
-            <li><strong>4.</strong> Select a student and start the timer</li>
-            <li><strong>5.</strong> Student explains the word in 60 seconds</li>
+            <li><strong>3.</strong> Open Judge Console on the third device/tab</li>
+            <li><strong>4.</strong> Upload Excel file with student names and words</li>
+            <li><strong>5.</strong> Select a student and start the timer</li>
+            <li><strong>6.</strong> Judge types the spelling as the student answers</li>
           </ol>
         </div>
         

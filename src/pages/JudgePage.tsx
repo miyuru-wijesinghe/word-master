@@ -1,0 +1,223 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { broadcastManager } from '../utils/broadcast';
+import type { QuizMessage } from '../utils/broadcast';
+
+const normalizeWord = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/gi, '');
+
+export const JudgePage: React.FC = () => {
+  const [currentWord, setCurrentWord] = useState('');
+  const [typedWord, setTypedWord] = useState('');
+  const [timeLeft, setTimeLeft] = useState(60);
+  const [status, setStatus] = useState<'waiting' | 'running' | 'paused'>('waiting');
+  const [autoSubmitPending, setAutoSubmitPending] = useState(false);
+
+  const typedWordRef = useRef('');
+  const currentWordRef = useRef('');
+  const lastSubmittedSignatureRef = useRef<string>('');
+
+  useEffect(() => {
+    typedWordRef.current = typedWord;
+  }, [typedWord]);
+
+  useEffect(() => {
+    currentWordRef.current = currentWord;
+  }, [currentWord]);
+
+  const resetJudgeState = () => {
+    setCurrentWord('');
+    setTypedWord('');
+    setTimeLeft(60);
+    setStatus('waiting');
+    setAutoSubmitPending(false);
+  };
+
+  const submitResult = (actualWord?: string, trigger: 'auto' | 'manual' = 'manual') => {
+    const resolvedWord = (actualWord && actualWord.trim()) || currentWordRef.current.trim();
+    if (!resolvedWord) return;
+
+    const capturedTyped = typedWordRef.current.trim();
+    const normalizedActual = normalizeWord(resolvedWord);
+    const normalizedTyped = normalizeWord(capturedTyped);
+    const isCorrect =
+      normalizedActual.length > 0 &&
+      normalizedTyped.length > 0 &&
+      normalizedActual === normalizedTyped;
+
+    const displayTyped = capturedTyped || '—';
+    const signature = `${resolvedWord.toLowerCase()}::${displayTyped.toLowerCase()}::${trigger}`;
+
+    if (
+      (trigger === 'auto' && signature === lastSubmittedSignatureRef.current) ||
+      (trigger === 'auto' && !capturedTyped)
+    ) {
+      return;
+    }
+    lastSubmittedSignatureRef.current = signature;
+
+    if (trigger === 'manual') {
+      broadcastManager.send({
+        type: 'judge',
+        judgeData: {
+          actualWord: resolvedWord,
+          typedWord: displayTyped,
+          isCorrect
+        }
+      });
+
+      if (status !== 'waiting') {
+        broadcastManager.send({
+          type: 'control',
+          control: {
+            action: 'end'
+          }
+        });
+      }
+    }
+
+    setAutoSubmitPending(false);
+  };
+
+  useEffect(() => {
+    const cleanup = broadcastManager.listen((message: QuizMessage) => {
+      switch (message.type) {
+        case 'update':
+          if (message.data && message.data.isRunning) {
+            const incomingWord = message.data.word;
+            setTimeLeft(message.data.timeLeft);
+            setStatus('running');
+            setAutoSubmitPending(true);
+
+            if (incomingWord && incomingWord !== currentWordRef.current) {
+              setCurrentWord(incomingWord);
+              setTypedWord('');
+            }
+          }
+          break;
+        case 'pause':
+          if (message.data?.timeLeft) {
+            setTimeLeft(message.data.timeLeft);
+          }
+          setStatus('paused');
+          break;
+        case 'end':
+          setStatus('waiting');
+          setTimeLeft(0);
+          break;
+        case 'clear':
+          resetJudgeState();
+          break;
+        case 'video':
+          // Ignore video events but ensure judge UI resets when switching away from timer mode
+          if (message.videoData?.displayMode === 'video') {
+            resetJudgeState();
+          }
+          break;
+        default:
+          break;
+      }
+    });
+
+    return cleanup;
+  }, []);
+
+  const statusBadge = useMemo(() => {
+    switch (status) {
+      case 'running':
+        return { label: 'Running', color: 'bg-green-100 text-green-800' };
+      case 'paused':
+        return { label: 'Paused', color: 'bg-yellow-100 text-yellow-800' };
+      default:
+        return { label: 'Waiting', color: 'bg-slate-100 text-slate-700' };
+    }
+  }, [status]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 py-8">
+      <div className="max-w-5xl mx-auto px-4 space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold text-slate-900">Judge Console</h1>
+          <Link
+            to="/"
+            className="bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition-colors"
+          >
+            ← Back
+          </Link>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="bg-white rounded-2xl shadow p-6 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-slate-800">Current Word</h2>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusBadge.color}`}>
+                {statusBadge.label}
+              </span>
+            </div>
+            {currentWord ? (
+              <div className="text-center">
+                <div className="text-5xl font-bold text-slate-900 mb-2">{currentWord}</div>
+                <p className="text-sm text-slate-500">Type the spelling exactly as the student says.</p>
+              </div>
+            ) : (
+              <div className="text-center text-slate-400 text-2xl py-6">Waiting for next word…</div>
+            )}
+            <div className="flex items-center justify-between text-slate-600 text-sm">
+              <div>
+                <p className="font-semibold text-slate-700">Time Left</p>
+                <p className="text-2xl font-bold text-slate-900">{formatTime(timeLeft)}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-semibold text-slate-700">Auto Submit</p>
+                <p>{autoSubmitPending ? 'Enabled' : 'Waiting'}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow p-6 flex flex-col gap-4">
+            <h2 className="text-xl font-semibold text-slate-800">Spell Capture</h2>
+            <textarea
+              value={typedWord}
+              onChange={(e) => setTypedWord(e.target.value)}
+              placeholder="Type the student's spelling here..."
+              className="w-full h-40 border-2 border-slate-200 rounded-xl p-4 text-lg focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-400 resize-none"
+            />
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => submitResult(undefined, 'manual')}
+                disabled={!currentWord}
+                className={`flex-1 px-4 py-3 rounded-xl font-semibold text-white transition-colors ${
+                  currentWord
+                    ? 'bg-blue-600 hover:bg-blue-700'
+                    : 'bg-gray-400 cursor-not-allowed text-gray-100'
+                }`}
+              >
+                📤 Send Result Now
+              </button>
+              <button
+                onClick={() => setTypedWord('')}
+                className="px-4 py-3 rounded-xl font-semibold border-2 border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+            <p className="text-sm text-slate-500">
+              Results are sent automatically when the timer ends or when End is pressed on the control screen.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+};
+

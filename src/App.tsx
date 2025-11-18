@@ -3,6 +3,7 @@ import { MainPage } from './pages/MainPage';
 import { ActionPage } from './pages/ActionPage';
 import { ViewPage } from './pages/ViewPage';
 import { ManageScreen } from './pages/ManageScreen';
+import { JudgePage } from './pages/JudgePage';
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
         <Route path="/action" element={<ActionPage />} />
         <Route path="/view" element={<ViewPage />} />
         <Route path="/manage" element={<ManageScreen />} />
+        <Route path="/judge" element={<JudgePage />} />
       </Routes>
     </Router>
   );

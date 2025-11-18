@@ -4,19 +4,58 @@ import { broadcastManager } from '../utils/broadcast';
 import type { QuizMessage } from '../utils/broadcast';
 import { soundManager } from '../utils/soundManager';
 
+const RESULT_DELAY_MS = 5000;
+const RESULT_DISPLAY_MS = 15000;
+
 export const ViewPage: React.FC = () => {
-  const [word, setWord] = useState('');
   const [timeLeft, setTimeLeft] = useState(60);
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [timerEnded, setTimerEnded] = useState(false);
-  const [showWord, setShowWord] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [displayMode, setDisplayMode] = useState<'timer' | 'video'>('timer');
+  const [judgeResult, setJudgeResult] = useState<QuizMessage['judgeData'] | null>(null);
+  const [pendingWord, setPendingWord] = useState('');
+  const [isResultVisible, setIsResultVisible] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const lastBeepRef = useRef<number>(-1);
-  const wordTimeoutRef = useRef<number | null>(null);
-  const hideWordTimeoutRef = useRef<number | null>(null);
+  const resultDelayTimeoutRef = useRef<number | null>(null);
+  const resultHideTimeoutRef = useRef<number | null>(null);
+
+  const clearResultTimers = () => {
+    if (resultDelayTimeoutRef.current !== null) {
+      clearTimeout(resultDelayTimeoutRef.current);
+      resultDelayTimeoutRef.current = null;
+    }
+    if (resultHideTimeoutRef.current !== null) {
+      clearTimeout(resultHideTimeoutRef.current);
+      resultHideTimeoutRef.current = null;
+    }
+  };
+
+  const startResultWindow = (wordToShow?: string) => {
+    clearResultTimers();
+    if (wordToShow) {
+      setPendingWord(wordToShow);
+    }
+    setTimerEnded(true);
+    setIsRunning(false);
+    setIsPaused(false);
+    setIsResultVisible(false);
+
+    resultDelayTimeoutRef.current = window.setTimeout(() => {
+      setIsResultVisible(true);
+      resultDelayTimeoutRef.current = null;
+
+      resultHideTimeoutRef.current = window.setTimeout(() => {
+        setIsResultVisible(false);
+        setPendingWord('');
+        setJudgeResult(null);
+        setTimerEnded(false);
+        resultHideTimeoutRef.current = null;
+      }, RESULT_DISPLAY_MS);
+    }, RESULT_DELAY_MS);
+  };
 
   useEffect(() => {
     const cleanup = broadcastManager.listen((message: QuizMessage) => {
@@ -25,14 +64,14 @@ export const ViewPage: React.FC = () => {
           // Only update ViewPage if timer is actually running (isRunning === true)
           // Don't update on row selection - that's only for ManageScreen
           if (message.data && message.data.isRunning) {
-            // Store word but don't display - only display after timer ends
-            setWord(message.data.word);
             setTimeLeft(message.data.timeLeft);
             setIsRunning(message.data.isRunning);
             setIsPaused(!message.data.isRunning);
-            // NEVER show word during countdown or selection - only after timer ends
-            // timerEnded is only set to true when 'end' message is received
             setTimerEnded(false);
+            setPendingWord('');
+            setIsResultVisible(false);
+            setJudgeResult(null);
+            clearResultTimers();
           }
           // If message.data.isRunning is false or missing, ignore it (row selection)
           break;
@@ -51,69 +90,32 @@ export const ViewPage: React.FC = () => {
           setIsRunning(false);
           break;
         case 'end':
-          // Clear any existing timeouts
-          if (wordTimeoutRef.current !== null) {
-            clearTimeout(wordTimeoutRef.current);
-            wordTimeoutRef.current = null;
-          }
-          if (hideWordTimeoutRef.current !== null) {
-            clearTimeout(hideWordTimeoutRef.current);
-            hideWordTimeoutRef.current = null;
-          }
-          
-          // If word is provided in end message, show word after delay (same process for natural end or End button)
-          // If no word in end message, reset to default
+          clearResultTimers();
           if (message.data && message.data.word) {
-            // Timer ended (naturally or via End button) - play beep and show word
             soundManager.playTimerEndBeep();
-            setTimerEnded(true);
-            setWord(message.data.word);
-            setIsRunning(false);
-            setIsPaused(false);
-            setShowWord(false); // Don't show word immediately
-            
-            // Wait 5 seconds before showing the word
-            wordTimeoutRef.current = window.setTimeout(() => {
-              setShowWord(true);
-              wordTimeoutRef.current = null;
-              
-              // After showing word, wait 8 seconds then hide it
-              hideWordTimeoutRef.current = window.setTimeout(() => {
-                setShowWord(false);
-                setWord('');
-                setTimerEnded(false);
-                hideWordTimeoutRef.current = null;
-              }, 8000);
-            }, 5000);
+            startResultWindow(message.data.word);
           } else {
-            // End button was pressed - reset to default
             setTimerEnded(false);
-            setShowWord(false);
+            setIsResultVisible(false);
             setIsRunning(false);
             setIsPaused(false);
-            setWord('');
+            setPendingWord('');
+            setJudgeResult(null);
             setTimeLeft(60);
           }
           lastBeepRef.current = -1;
           break;
         case 'clear':
-          // Clear any existing timeouts
-          if (wordTimeoutRef.current !== null) {
-            clearTimeout(wordTimeoutRef.current);
-            wordTimeoutRef.current = null;
-          }
-          if (hideWordTimeoutRef.current !== null) {
-            clearTimeout(hideWordTimeoutRef.current);
-            hideWordTimeoutRef.current = null;
-          }
-          setWord('');
+          clearResultTimers();
+          setPendingWord('');
           setTimeLeft(60);
           setIsRunning(false);
           setIsPaused(false);
           setTimerEnded(false);
-          setShowWord(false);
+          setIsResultVisible(false);
           setVideoUrl('');
           setDisplayMode('timer');
+          setJudgeResult(null);
           lastBeepRef.current = -1;
           break;
         case 'video':
@@ -128,43 +130,29 @@ export const ViewPage: React.FC = () => {
                 // When switching to timer mode, clear word unless timer just ended
                 // Timer running state will be updated by 'update' messages
                 setTimerEnded(false);
-                setShowWord(false);
+                setIsResultVisible(false);
                 // Don't clear word here - it might be from a timer that just ended
                 // Only clear if it's a stop action
                 if (message.videoData.action === 'stop') {
-                  // Clear any existing timeouts
-                  if (wordTimeoutRef.current !== null) {
-                    clearTimeout(wordTimeoutRef.current);
-                    wordTimeoutRef.current = null;
-                  }
-                  if (hideWordTimeoutRef.current !== null) {
-                    clearTimeout(hideWordTimeoutRef.current);
-                    hideWordTimeoutRef.current = null;
-                  }
-                  setWord('');
+                  clearResultTimers();
+                  setPendingWord('');
                   setIsRunning(false);
                   setIsPaused(false);
                   setTimeLeft(60);
+                  setJudgeResult(null);
                 }
               }
               
               // When switching to video mode, ensure timer states are cleared
               if (newMode === 'video') {
-                // Clear any existing timeouts
-                if (wordTimeoutRef.current !== null) {
-                  clearTimeout(wordTimeoutRef.current);
-                  wordTimeoutRef.current = null;
-                }
-                if (hideWordTimeoutRef.current !== null) {
-                  clearTimeout(hideWordTimeoutRef.current);
-                  hideWordTimeoutRef.current = null;
-                }
+                clearResultTimers();
                 setIsRunning(false);
                 setIsPaused(false);
                 setTimerEnded(false);
-                setShowWord(false);
+                setIsResultVisible(false);
                 // Keep word cleared when switching to video
-                setWord('');
+                setPendingWord('');
+                setJudgeResult(null);
               }
             }
             
@@ -207,6 +195,22 @@ export const ViewPage: React.FC = () => {
                 // displayMode is already set from message.videoData.displayMode above
               }
             }, 0);
+          }
+          break;
+        case 'judge':
+          if (message.judgeData) {
+            setJudgeResult(message.judgeData);
+            if (!pendingWord && message.judgeData.actualWord) {
+              setPendingWord(message.judgeData.actualWord);
+            }
+            if (!timerEnded && !isResultVisible) {
+              startResultWindow(message.judgeData.actualWord);
+            }
+            if (message.judgeData.isCorrect) {
+              soundManager.playCorrectSound();
+            } else {
+              soundManager.playIncorrectSound();
+            }
           }
           break;
       }
@@ -265,12 +269,7 @@ export const ViewPage: React.FC = () => {
   // Cleanup timeouts on unmount
   useEffect(() => {
     return () => {
-      if (wordTimeoutRef.current !== null) {
-        clearTimeout(wordTimeoutRef.current);
-      }
-      if (hideWordTimeoutRef.current !== null) {
-        clearTimeout(hideWordTimeoutRef.current);
-      }
+      clearResultTimers();
     };
   }, []);
 
@@ -296,11 +295,9 @@ export const ViewPage: React.FC = () => {
   // Prevent unwanted keyboard input on ViewPage
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Only prevent default for keys that might cause issues
-      // Allow normal typing in any input fields
       const target = event.target as HTMLElement;
       
-      // If user is typing in an input field, allow it
+      // Allow default behavior when the user is focused in an input/textarea/select/contentEditable element
       if (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
@@ -309,14 +306,16 @@ export const ViewPage: React.FC = () => {
       ) {
         return;
       }
-      
-      // Prevent key repeat events from causing issues
-      if (event.repeat) {
-        // Only prevent if it's a problematic key
-        if (event.key === 'd' || event.key === 'D') {
-          event.preventDefault();
-          event.stopPropagation();
-        }
+
+      const isCharacterKey =
+        event.key.length === 1 &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey;
+
+      if (event.repeat || isCharacterKey) {
+        event.preventDefault();
+        event.stopPropagation();
       }
     };
 
@@ -363,20 +362,7 @@ export const ViewPage: React.FC = () => {
               Select a video in Manage Screen
             </p>
           </div>
-        ) : displayMode === 'timer' && word && timerEnded && showWord ? (
-          /* Show word ONLY after timer ends AND after 5 second delay */
-          <div className="text-center max-w-4xl mx-auto">
-            <div className="mb-16">
-              <h2 className="text-5xl font-bold text-green-400 mb-6">Word</h2>
-              <div className="text-7xl font-bold text-white bg-green-600 px-12 py-8 rounded-2xl shadow-2xl">
-                {word}
-              </div>
-              <div className="mt-8 text-3xl font-semibold text-slate-400">
-                Timer Ended
-              </div>
-            </div>
-          </div>
-        ) : displayMode === 'timer' && timerEnded && !showWord ? (
+        ) : displayMode === 'timer' && timerEnded && !isResultVisible ? (
           /* Show waiting message during 5 second delay after timer ends */
           <div className="text-center">
             <div className="text-8xl mb-8">⏳</div>
@@ -407,12 +393,54 @@ export const ViewPage: React.FC = () => {
             <div className="text-8xl mb-8">🎯</div>
             <h2 className="text-6xl font-bold text-slate-400 mb-4">Waiting for the Word</h2>
             <p className="text-3xl text-slate-500">
-              Ready for the next challenge
+            🐝Get Set...The Next Word’s Coming!
             </p>
           </div>
         )}
       </div>
-
+      {displayMode === 'timer' && isResultVisible && (
+        <div className="px-8 pb-10">
+          <div
+            className={`max-w-4xl mx-auto rounded-3xl border-2 p-6 text-center ${
+              judgeResult
+                ? judgeResult.isCorrect
+                  ? 'bg-green-900/40 border-green-500 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
+                  : 'bg-red-900/40 border-red-500 shadow-[0_0_30px_rgba(248,113,113,0.3)]'
+                : 'bg-slate-900/40 border-white/10'
+            }`}
+          >
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+              <h3 className="text-3xl font-bold">Latest Result</h3>
+              {judgeResult && (
+                <span
+                  className={`px-6 py-2 rounded-full text-xl font-semibold ${
+                    judgeResult.isCorrect ? 'bg-green-500 text-slate-900' : 'bg-red-500 text-white'
+                  }`}
+                >
+                  {judgeResult.isCorrect ? 'Correct' : 'Incorrect'}
+                </span>
+              )}
+            </div>
+            <div className="grid gap-6 md:grid-cols-2 text-left">
+              <div className="bg-slate-900/40 rounded-2xl p-5 border border-white/10">
+                <p className="text-sm uppercase tracking-widest text-slate-400 mb-2">Correct Word</p>
+                <p className="text-4xl font-bold break-words">
+                  {pendingWord || judgeResult?.actualWord || ''}
+                </p>
+              </div>
+              {judgeResult && (
+                <div className="bg-slate-900/40 rounded-2xl p-5 border border-white/10">
+                  <p className="text-sm uppercase tracking-widest text-slate-400 mb-2">Typed Word</p>
+                  <p className="text-4xl font-bold break-words">
+                    {judgeResult.typedWord || ''}
+                  </p>
+                </div>
+              )}
+            </div>
+            <p className="mt-6 text-slate-300 text-lg">Result shared from Judge Console</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

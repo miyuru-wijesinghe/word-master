@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { broadcastManager } from '../utils/broadcast';
 import type { QuizMessage } from '../utils/broadcast';
@@ -23,6 +23,21 @@ export const ManageScreen: React.FC = () => {
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [hasVideoPlayed, setHasVideoPlayed] = useState(false); // Track if video has been played at least once
   const [displayMode, setDisplayMode] = useState<'timer' | 'video'>('timer'); // Track which mode is active
+  const timerActiveRef = useRef(false);
+
+  const resetAfterEnd = () => {
+    setTimerEnded(false);
+    setCurrentWord('');
+    setHasStarted(false);
+    setSelectedDuration(null);
+    setIsRunning(false);
+    setIsPaused(false);
+    setTimeLeft(60);
+  };
+
+  useEffect(() => {
+    timerActiveRef.current = isRunning || isPaused;
+  }, [isRunning, isPaused]);
 
   useEffect(() => {
     // Listen for broadcast messages
@@ -33,38 +48,60 @@ export const ManageScreen: React.FC = () => {
       
       // Update timer state
       if (message.data) {
-        setTimeLeft(message.data.timeLeft);
-        setIsRunning(message.data.isRunning);
-        setIsPaused(false);
-        if (message.data.word) {
-          setCurrentWord(message.data.word);
+        const { timeLeft: incomingTime, isRunning: incomingRunning, word } = message.data;
+        const isSelectionUpdate = message.type === 'update' && !incomingRunning && incomingTime === 0;
+
+        if (isSelectionUpdate) {
+          if (word) {
+            setCurrentWord(word);
+          }
+          
+          if (!timerActiveRef.current) {
+            setIsRunning(false);
+            setIsPaused(false);
+            setHasStarted(false);
+            setTimerEnded(false);
+            setTimeLeft(0);
+          }
+          
+          // Selection updates shouldn't override an active timer
+          if (timerActiveRef.current) {
+            return;
+          }
         }
-        // If timeLeft is 0 and not running, it's just showing the word for selection
-        if (message.data.timeLeft === 0 && !message.data.isRunning) {
-          // Just update word, don't set timer as ended
-          setTimerEnded(false);
-          setHasStarted(false);
-        } else if (message.data.timeLeft === 0 && message.data.isRunning === false) {
-          // Timer actually ended
-          setTimerEnded(true);
-          setHasStarted(false);
-        } else if (message.data.timeLeft > 0 && message.data.isRunning) {
-          // Reset timerEnded if timer restarts
+        
+        setTimeLeft(incomingTime);
+        setIsRunning(incomingRunning);
+        
+        if (word) {
+          setCurrentWord(word);
+        }
+        
+        if (incomingRunning) {
+          setIsPaused(false);
           setTimerEnded(false);
           setHasStarted(true);
+        } else if (incomingTime === 0) {
+          // Not running and no countdown active
+          setIsPaused(false);
+          setHasStarted(false);
+          if (!word) {
+            setTimerEnded(false);
+          }
         }
       }
       
       // Handle pause
       if (message.type === 'pause') {
         setIsPaused(true);
-        setIsRunning(message.data?.isRunning || false);
+        setIsRunning(false);
       }
       
       // Handle end - differentiate between natural timer end and End button press
       if (message.type === 'end') {
         setIsRunning(false);
         setIsPaused(false);
+        setTimeLeft(0);
         // If message has word data, timer ended naturally - show end screen
         // If no word data, End button was pressed - already handled in handleEnd
         if (message.data && message.data.word) {
@@ -73,10 +110,14 @@ export const ManageScreen: React.FC = () => {
           setHasStarted(false);
         } else {
           // End button was pressed - clear everything (already handled in handleEnd)
-          setTimerEnded(false);
-          setCurrentWord('');
-          setHasStarted(false);
-          setSelectedDuration(null);
+          resetAfterEnd();
+        }
+      }
+
+      // Handle judge submissions that manually end the round
+      if (message.type === 'judge' && message.judgeData) {
+        if (timerActiveRef.current) {
+          resetAfterEnd();
         }
       }
     });
@@ -98,7 +139,8 @@ export const ManageScreen: React.FC = () => {
   const handleStart = () => {
     // Ensure we're in timer mode
     setDisplayMode('timer');
-    if (!selectedDuration) {
+    const duration = selectedDuration;
+    if (!duration) {
       alert('Please select a time duration (30s or 2m) before starting');
       return;
     }
@@ -117,15 +159,30 @@ export const ManageScreen: React.FC = () => {
       type: 'control',
       control: {
         action: 'start',
-        duration: selectedDuration
+        duration
       }
     };
     broadcastManager.send(message);
     soundManager.playStartSound();
+    
+    // Optimistically update local timer state for immediate feedback
+    setTimerEnded(false);
+    setIsPaused(false);
+    setIsRunning(true);
     setHasStarted(true);
+    setTimeLeft(duration);
   };
 
   const handlePause = () => {
+    if (!isRunning && !isPaused) {
+      return;
+    }
+    
+    const nextPaused = !isPaused;
+    setIsPaused(nextPaused);
+    setIsRunning(!nextPaused);
+    setHasStarted(true);
+    
     const message: QuizMessage = {
       type: 'control',
       control: {
@@ -146,13 +203,7 @@ export const ManageScreen: React.FC = () => {
     broadcastManager.send(message);
     soundManager.playEndSound();
     // Clear the end screen when End button is pressed
-    setTimerEnded(false);
-    setCurrentWord('');
-    setHasStarted(false);
-    setSelectedDuration(null);
-    setIsRunning(false);
-    setIsPaused(false);
-    setTimeLeft(60);
+    resetAfterEnd();
   };
 
   const formatTime = (seconds: number) => {

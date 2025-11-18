@@ -1,7 +1,7 @@
 import { firebaseSyncManager } from './firebaseSync';
 
 export interface QuizMessage {
-  type: 'update' | 'pause' | 'end' | 'clear' | 'speech' | 'control' | 'video';
+  type: 'update' | 'pause' | 'end' | 'clear' | 'speech' | 'control' | 'video' | 'judge';
   data?: {
     student: string;
     word: string;
@@ -27,6 +27,11 @@ export interface QuizMessage {
     isPlaying: boolean;
     action?: 'play' | 'pause' | 'stop';
     displayMode?: 'timer' | 'video';
+  };
+  judgeData?: {
+    actualWord: string;
+    typedWord: string;
+    isCorrect: boolean;
   };
 }
 

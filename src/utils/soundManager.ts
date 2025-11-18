@@ -74,6 +74,18 @@ export class SoundManager {
     // Simple beep sound when timer ends - louder volume and longer duration
     this.playTone(600, 0.8, 'sine', 0.6);
   }
+
+  public playCorrectSound() {
+    // Positive chime for correct spelling
+    this.playTone(900, 0.25, 'sine', 0.6);
+    setTimeout(() => this.playTone(1100, 0.25, 'triangle', 0.5), 180);
+  }
+
+  public playIncorrectSound() {
+    // Lower buzz for incorrect spelling
+    this.playTone(200, 0.35, 'sawtooth', 0.5);
+    setTimeout(() => this.playTone(160, 0.4, 'sawtooth', 0.4), 220);
+  }
 }
 
 export const soundManager = SoundManager.getInstance();

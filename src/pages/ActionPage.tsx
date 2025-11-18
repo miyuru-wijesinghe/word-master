@@ -19,19 +19,17 @@ export const ActionPage: React.FC = () => {
   const [currentWord, setCurrentWord] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Handle row selection - just select, don't start
+  // Handle row selection - single selection, don't start
   const handleSelectRow = (index: number) => {
-    // Toggle selection
-    const newSelectedRows = selectedRows.includes(index)
-      ? selectedRows.filter(i => i !== index)
-      : [...selectedRows, index];
+    const isAlreadySelected = selectedRows.length === 1 && selectedRows[0] === index;
+    
+    // Only keep one selection at a time
+    const newSelectedRows = isAlreadySelected ? [] : [index];
     
     setSelectedRows(newSelectedRows);
     
     // Get the last selected row's word to display in ManageScreen
-    const lastSelectedIndex = newSelectedRows.length > 0 
-      ? newSelectedRows[newSelectedRows.length - 1] 
-      : -1;
+    const lastSelectedIndex = newSelectedRows.length > 0 ? newSelectedRows[0] : -1;
     const lastRow = lastSelectedIndex >= 0 ? quizData[lastSelectedIndex] : null;
 
     // Broadcast selected entries and current word to manage screen
