@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { broadcastManager } from '../utils/broadcast';
 import type { QuizMessage } from '../utils/broadcast';
-import { soundManager } from '../utils/soundManager';
 
 interface SelectedEntry {
   word: string;
@@ -23,6 +22,7 @@ export const ManageScreen: React.FC = () => {
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [hasVideoPlayed, setHasVideoPlayed] = useState(false); // Track if video has been played at least once
   const [displayMode, setDisplayMode] = useState<'timer' | 'video'>('timer'); // Track which mode is active
+  const [mediaType, setMediaType] = useState<'video' | 'image' | null>(null);
   const timerActiveRef = useRef(false);
 
   const resetAfterEnd = (options?: { keepWord?: boolean }) => {
@@ -152,7 +152,8 @@ export const ManageScreen: React.FC = () => {
       videoData: { 
         url: '', 
         isPlaying: false, 
-        displayMode: 'timer'
+        displayMode: 'timer',
+        mediaType: mediaType || 'video'
       }
     });
     
@@ -164,8 +165,6 @@ export const ManageScreen: React.FC = () => {
       }
     };
     broadcastManager.send(message);
-    soundManager.playStartSound();
-    
     // Optimistically update local timer state for immediate feedback
     setTimerEnded(false);
     setIsPaused(false);
@@ -191,7 +190,6 @@ export const ManageScreen: React.FC = () => {
       }
     };
     broadcastManager.send(message);
-    soundManager.playPauseSound();
   };
 
   const handleEnd = () => {
@@ -202,7 +200,6 @@ export const ManageScreen: React.FC = () => {
       }
     };
     broadcastManager.send(message);
-    soundManager.playEndSound();
     // Clear the end screen when End button is pressed
     resetAfterEnd();
   };
@@ -250,13 +247,15 @@ export const ManageScreen: React.FC = () => {
                     url: '', 
                     isPlaying: false, 
                     action: 'stop',
-                    displayMode: 'timer'
+                    displayMode: 'timer',
+                    mediaType: mediaType || 'video'
                   }
                 });
                 // Clear video state if switching to timer
                 if (videoObjectUrl || videoUrl) {
                   setIsVideoPlaying(false);
                   setHasVideoPlayed(false);
+                  setMediaType(null);
                   if (videoObjectUrl) {
                     URL.revokeObjectURL(videoObjectUrl);
                     setVideoObjectUrl('');
@@ -285,7 +284,8 @@ export const ManageScreen: React.FC = () => {
                   videoData: { 
                     url: videoObjectUrl || videoUrl || '', 
                     isPlaying: false, 
-                    displayMode: 'video'
+                    displayMode: 'video',
+                    mediaType: mediaType || 'video'
                   }
                 });
               }}
@@ -303,31 +303,36 @@ export const ManageScreen: React.FC = () => {
         {/* Video Control Section */}
         {displayMode === 'video' && (
           <div className="bg-white rounded-xl shadow-lg p-8 mb-6">
-            <h2 className="text-2xl font-bold text-slate-900 mb-6 text-center">Video Control</h2>
+            <h2 className="text-2xl font-bold text-slate-900 mb-6 text-center">Video & Image Control</h2>
             
             {/* Video Upload */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Video File
+                Select Media File (Video or Image)
               </label>
               <input
                 type="file"
-                accept="video/*"
+                accept="video/*,image/*"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) {
                     const objectUrl = URL.createObjectURL(file);
+                    const detectedType: 'video' | 'image' = file.type.startsWith('image/')
+                      ? 'image'
+                      : 'video';
                     setVideoObjectUrl(objectUrl);
                     setVideoUrl(objectUrl);
                     setIsVideoPlaying(false);
                     setHasVideoPlayed(false);
+                    setMediaType(detectedType);
                     // Broadcast video loaded
                     broadcastManager.send({
                       type: 'video',
                       videoData: { 
                         url: objectUrl, 
                         isPlaying: false,
-                        displayMode: 'video'
+                        displayMode: 'video',
+                        mediaType: detectedType
                       }
                     });
                   }
@@ -351,7 +356,8 @@ export const ManageScreen: React.FC = () => {
                             url: videoObjectUrl || videoUrl, 
                             isPlaying: true, 
                             action: 'play',
-                            displayMode: 'video'
+                            displayMode: 'video',
+                            mediaType: mediaType || 'video'
                           }
                         });
                       } else {
@@ -362,7 +368,8 @@ export const ManageScreen: React.FC = () => {
                             url: videoObjectUrl || videoUrl, 
                             isPlaying: false, 
                             action: 'pause',
-                            displayMode: 'video'
+                            displayMode: 'video',
+                            mediaType: mediaType || 'video'
                           }
                         });
                       }
@@ -384,6 +391,7 @@ export const ManageScreen: React.FC = () => {
                       setIsVideoPlaying(false);
                       setHasVideoPlayed(false);
                       setVideoUrl('');
+                      setMediaType(null);
                       if (videoObjectUrl) {
                         URL.revokeObjectURL(videoObjectUrl);
                         setVideoObjectUrl('');
@@ -394,7 +402,8 @@ export const ManageScreen: React.FC = () => {
                           url: '', 
                           isPlaying: false, 
                           action: 'stop',
-                          displayMode: 'timer'
+                          displayMode: 'timer',
+                          mediaType: mediaType || 'video'
                         }
                       });
                     }}

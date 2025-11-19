@@ -5,7 +5,6 @@ import { parseExcelFile } from '../utils/excelParser';
 import type { QuizRow } from '../utils/excelParser';
 import { broadcastManager } from '../utils/broadcast';
 import type { QuizMessage } from '../utils/broadcast';
-import { soundManager } from '../utils/soundManager';
 import * as XLSX from 'xlsx';
 
 export const ActionPage: React.FC = () => {
@@ -89,8 +88,6 @@ export const ActionPage: React.FC = () => {
                 setIsPaused(false);
                 lastBeepRef.current = -1; // Reset beep tracking when timer starts
                 
-                soundManager.playStartSound();
-                
                 const startMessage: QuizMessage = {
                   type: 'update',
                   data: {
@@ -113,8 +110,6 @@ export const ActionPage: React.FC = () => {
           case 'pause':
             setIsPaused(prevPaused => {
               const newPaused = !prevPaused;
-              
-              soundManager.playPauseSound();
               
               setCurrentStudent(prev => {
                 setCurrentWord(prevWord => {
@@ -153,9 +148,6 @@ export const ActionPage: React.FC = () => {
             setCurrentStudent('');
             setCurrentWord('');
             setStartedRow(null);
-            
-            // Play timer end beep (same as natural timer end)
-            soundManager.playTimerEndBeep();
             
             const endMessage: QuizMessage = {
               type: 'end',
@@ -311,9 +303,6 @@ export const ActionPage: React.FC = () => {
     setIsRunning(true);
     setIsPaused(false);
 
-    // Play start sound
-    soundManager.playStartSound();
-
     // Broadcast to view page and manage screen
     const message: QuizMessage = {
       type: 'update',
@@ -333,9 +322,6 @@ export const ActionPage: React.FC = () => {
 
   const handlePause = () => {
     setIsPaused(!isPaused);
-    
-    // Play pause sound
-    soundManager.playPauseSound();
     
     const message: QuizMessage = {
       type: isPaused ? 'update' : 'pause',
@@ -364,9 +350,6 @@ export const ActionPage: React.FC = () => {
     setCurrentWord('');
     setStartedRow(null);
     // Don't clear selectedRows - keep them for manage screen
-
-    // Play timer end beep (same as natural timer end)
-    soundManager.playTimerEndBeep();
 
     // Broadcast end to view page and manage screen (with current word and selected entries)
     const message: QuizMessage = {
@@ -398,8 +381,7 @@ export const ActionPage: React.FC = () => {
           const newTime = prev - 1;
           
           if (newTime <= 0) {
-            // Timer ended - play longer beep and update state
-            soundManager.playTimerEndBeep();
+            // Timer ended - update state
             setIsRunning(false);
             setIsPaused(false);
             setStartedRow(null);
@@ -423,17 +405,19 @@ export const ActionPage: React.FC = () => {
             return 0;
           }
           
-          // Beep sound announcements (replacing voice)
-          if (newTime === 50 || newTime === 40 || newTime === 30 || newTime === 20 || newTime === 10) {
+          // Beep sound announcements (handled on ViewPage)
+          if (
+            newTime === 50 ||
+            newTime === 40 ||
+            newTime === 30 ||
+            newTime === 20 ||
+            newTime === 10
+          ) {
             if (lastBeepRef.current !== newTime) {
-              soundManager.playCountdownBeep();
-              soundManager.playWarningSound();
               broadcastManager.sendSpeech(newTime, true);
               lastBeepRef.current = newTime;
             }
           } else if (newTime <= 10 && newTime > 0 && lastBeepRef.current !== newTime) {
-            soundManager.playCountdownBeep();
-            soundManager.playTickSound();
             lastBeepRef.current = newTime;
             broadcastManager.sendSpeech(newTime, true);
           }

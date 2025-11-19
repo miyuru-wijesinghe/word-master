@@ -14,6 +14,8 @@ export const ViewPage: React.FC = () => {
   const [timerEnded, setTimerEnded] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [displayMode, setDisplayMode] = useState<'timer' | 'video'>('timer');
+  const [mediaType, setMediaType] = useState<'video' | 'image'>('video');
+  const [isImageVisible, setIsImageVisible] = useState(false);
   const [judgeResult, setJudgeResult] = useState<QuizMessage['judgeData'] | null>(null);
   const [pendingWord, setPendingWord] = useState('');
   const [isResultVisible, setIsResultVisible] = useState(false);
@@ -21,6 +23,7 @@ export const ViewPage: React.FC = () => {
   const lastBeepRef = useRef<number>(-1);
   const resultDelayTimeoutRef = useRef<number | null>(null);
   const resultHideTimeoutRef = useRef<number | null>(null);
+  const mediaTypeRef = useRef<'video' | 'image'>('video');
 
   const clearResultTimers = () => {
     if (resultDelayTimeoutRef.current !== null) {
@@ -33,7 +36,7 @@ export const ViewPage: React.FC = () => {
     }
   };
 
-  const startResultWindow = (wordToShow?: string) => {
+  const startResultWindow = (wordToShow?: string, immediate: boolean = false, preserveJudgeResult: boolean = false) => {
     clearResultTimers();
     if (wordToShow) {
       setPendingWord(wordToShow);
@@ -41,25 +44,83 @@ export const ViewPage: React.FC = () => {
     setTimerEnded(true);
     setIsRunning(false);
     setIsPaused(false);
-    setIsResultVisible(false);
-
-    resultDelayTimeoutRef.current = window.setTimeout(() => {
+    
+    if (immediate) {
+      // Show immediately - no delay
       setIsResultVisible(true);
-      resultDelayTimeoutRef.current = null;
-
+      
       resultHideTimeoutRef.current = window.setTimeout(() => {
+        soundManager.ensureAudioContext();
         soundManager.playWordClearBeep();
         setIsResultVisible(false);
         setPendingWord('');
+        // Clear judgeResult after display (always clear, preserveJudgeResult just prevents early clearing)
         setJudgeResult(null);
         setTimerEnded(false);
         resultHideTimeoutRef.current = null;
       }, RESULT_DISPLAY_MS);
-    }, RESULT_DELAY_MS);
+    } else {
+      // Normal flow with delay
+      setIsResultVisible(false);
+      resultDelayTimeoutRef.current = window.setTimeout(() => {
+        setIsResultVisible(true);
+        resultDelayTimeoutRef.current = null;
+
+        resultHideTimeoutRef.current = window.setTimeout(() => {
+          soundManager.ensureAudioContext();
+          soundManager.playWordClearBeep();
+          setIsResultVisible(false);
+          setPendingWord('');
+          setJudgeResult(null);
+          setTimerEnded(false);
+          resultHideTimeoutRef.current = null;
+        }, RESULT_DISPLAY_MS);
+      }, RESULT_DELAY_MS);
+    }
   };
 
   useEffect(() => {
+    mediaTypeRef.current = mediaType;
+  }, [mediaType]);
+
+  // Initialize audio context on view page load and on user interaction
+  useEffect(() => {
+    soundManager.ensureAudioContext();
+    // Also try to initialize on any user interaction
+    const handleInteraction = () => {
+      soundManager.ensureAudioContext();
+    };
+    document.addEventListener('click', handleInteraction, { once: true });
+    document.addEventListener('touchstart', handleInteraction, { once: true });
+    return () => {
+      document.removeEventListener('click', handleInteraction);
+      document.removeEventListener('touchstart', handleInteraction);
+    };
+  }, []);
+
+  // Play beep sounds when Latest Result becomes visible
+  useEffect(() => {
+    if (isResultVisible && judgeResult) {
+      console.log('Latest Result is now visible, playing sound. isCorrect:', judgeResult.isCorrect);
+      // Ensure audio context is ready
+      soundManager.ensureAudioContext();
+      // Play sound when result becomes visible
+      setTimeout(() => {
+        if (judgeResult.isCorrect) {
+          console.log('Playing correct beep sound');
+          soundManager.playCorrectSound();
+        } else {
+          console.log('Playing incorrect beep sound');
+          soundManager.playIncorrectSound();
+        }
+      }, 100);
+    }
+  }, [isResultVisible, judgeResult]);
+
+  useEffect(() => {
+    console.log('ViewPage: Setting up broadcast listener');
     const cleanup = broadcastManager.listen((message: QuizMessage) => {
+      console.log('ViewPage: Received message:', message.type, message);
       switch (message.type) {
         case 'update':
           // Only update ViewPage if timer is actually running (isRunning === true)
@@ -81,6 +142,7 @@ export const ViewPage: React.FC = () => {
             const timeToBeep = message.speechData.timeLeft;
             // Only beep if we haven't beeped this time yet
             if (lastBeepRef.current !== timeToBeep) {
+              soundManager.ensureAudioContext();
               soundManager.playCountdownBeep();
               lastBeepRef.current = timeToBeep;
             }
@@ -93,6 +155,7 @@ export const ViewPage: React.FC = () => {
         case 'end':
           clearResultTimers();
           if (message.data && message.data.word) {
+            soundManager.ensureAudioContext();
             soundManager.playTimerEndBeep();
             startResultWindow(message.data.word);
           } else {
@@ -108,6 +171,7 @@ export const ViewPage: React.FC = () => {
           break;
         case 'clear':
           clearResultTimers();
+          soundManager.ensureAudioContext();
           soundManager.playWordClearBeep();
           setPendingWord('');
           setTimeLeft(60);
@@ -117,12 +181,18 @@ export const ViewPage: React.FC = () => {
           setIsResultVisible(false);
           setVideoUrl('');
           setDisplayMode('timer');
+          setMediaType('video');
+          setIsImageVisible(false);
           setJudgeResult(null);
           lastBeepRef.current = -1;
           break;
         case 'video':
           if (message.videoData) {
-            let shouldPlayCloseBeep = false;
+            const previousMediaType = mediaTypeRef.current;
+            const incomingMediaType = message.videoData.mediaType ?? previousMediaType;
+            if (incomingMediaType !== previousMediaType) {
+              setMediaType(incomingMediaType);
+            }
             // Update display mode if provided - this should happen first
             if (message.videoData.displayMode) {
               const newMode = message.videoData.displayMode;
@@ -134,6 +204,7 @@ export const ViewPage: React.FC = () => {
                 // Timer running state will be updated by 'update' messages
                 setTimerEnded(false);
                 setIsResultVisible(false);
+                setIsImageVisible(false);
                 // Don't clear word here - it might be from a timer that just ended
                 // Only clear if it's a stop action
                 if (message.videoData.action === 'stop') {
@@ -143,12 +214,13 @@ export const ViewPage: React.FC = () => {
                   setIsPaused(false);
                   setTimeLeft(60);
                   setJudgeResult(null);
+                  setVideoUrl('');
+                  setMediaType('video');
                 }
               }
               
               // When switching to video mode, ensure timer states are cleared
               if (newMode === 'video') {
-                shouldPlayCloseBeep = true;
                 clearResultTimers();
                 setIsRunning(false);
                 setIsPaused(false);
@@ -157,14 +229,34 @@ export const ViewPage: React.FC = () => {
                 // Keep word cleared when switching to video
                 setPendingWord('');
                 setJudgeResult(null);
+                if (incomingMediaType === 'image') {
+                  setIsImageVisible(false);
+                }
               }
             }
             
             // Update video URL
             if (message.videoData.url !== undefined) {
               setVideoUrl(message.videoData.url || '');
+              if (incomingMediaType === 'image' && !message.videoData.action) {
+                setIsImageVisible(false);
+              }
             }
             
+            if (incomingMediaType === 'image') {
+              if (message.videoData?.action === 'play') {
+                setIsImageVisible(true);
+              } else if (message.videoData?.action === 'pause') {
+                setIsImageVisible(false);
+              } else if (message.videoData?.action === 'stop') {
+                setIsImageVisible(false);
+                setVideoUrl('');
+                setDisplayMode('timer');
+                setMediaType('video');
+              }
+              break;
+            }
+
             // Control video playback - use setTimeout to ensure DOM is updated
             setTimeout(() => {
               const video = videoRef.current;
@@ -196,31 +288,23 @@ export const ViewPage: React.FC = () => {
                   video.src = '';
                 }
                 setVideoUrl('');
-                shouldPlayCloseBeep = true;
                 // displayMode is already set from message.videoData.displayMode above
-              }
-
-              if (shouldPlayCloseBeep) {
-                soundManager.playWordClearBeep();
-                shouldPlayCloseBeep = false;
               }
             }, 0);
           }
           break;
         case 'judge':
           if (message.judgeData) {
+            console.log('Received judge result on view page:', message.judgeData);
+            // Use the same flow as timer end - call startResultWindow
+            // Ensure we're in timer mode to display results
+            setDisplayMode('timer');
+            // Set judge result FIRST so it's available when result window shows
             setJudgeResult(message.judgeData);
-            if (!pendingWord && message.judgeData.actualWord) {
-              setPendingWord(message.judgeData.actualWord);
-            }
-            if (!timerEnded && !isResultVisible) {
-              startResultWindow(message.judgeData.actualWord);
-            }
-            if (message.judgeData.isCorrect) {
-              soundManager.playCorrectSound();
-            } else {
-              soundManager.playIncorrectSound();
-            }
+            // Use startResultWindow with immediate=true and preserveJudgeResult=true
+            // This shows the result immediately just like timer end, but preserves judgeResult
+            startResultWindow(message.judgeData.actualWord, true, true);
+            // Sounds will be played when result becomes visible (see useEffect below)
           }
           break;
       }
@@ -229,35 +313,23 @@ export const ViewPage: React.FC = () => {
     return cleanup;
   }, []);
 
-  // Announce result verdict when result becomes visible
-  useEffect(() => {
-    if (isResultVisible && judgeResult && 'speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(
-        judgeResult.isCorrect ? 'Correct' : 'Incorrect'
-      );
-      utterance.rate = 0.9;
-      utterance.pitch = 1.1;
-      utterance.volume = 0.8;
-      window.speechSynthesis.speak(utterance);
-    }
-  }, [isResultVisible, judgeResult]);
 
   // Handle video URL changes and ensure video element is ready
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || displayMode !== 'video' || !videoUrl) return;
+    if (!video || displayMode !== 'video' || !videoUrl || mediaType !== 'video') return;
 
     // Ensure video source is set when URL changes
     if (video.src !== videoUrl) {
       video.src = videoUrl;
       video.load();
     }
-  }, [videoUrl, displayMode]);
+  }, [videoUrl, displayMode, mediaType]);
 
   // Handle video end event - automatically close video screen when video ends
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || displayMode !== 'video') return;
+    if (!video || displayMode !== 'video' || mediaType !== 'video') return;
 
     const handleVideoEnd = () => {
       // Clear video URL and reset display mode to timer
@@ -277,7 +349,8 @@ export const ViewPage: React.FC = () => {
           url: '', 
           isPlaying: false, 
           action: 'stop',
-          displayMode: 'timer'
+          displayMode: 'timer',
+          mediaType: 'video'
         }
       });
     };
@@ -287,7 +360,7 @@ export const ViewPage: React.FC = () => {
     return () => {
       video.removeEventListener('ended', handleVideoEnd);
     };
-  }, [videoUrl, displayMode]);
+  }, [videoUrl, displayMode, mediaType]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -351,7 +424,7 @@ export const ViewPage: React.FC = () => {
       {/* Header */}
       <div className="bg-slate-800 py-4 px-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold">APIIT SPELLING BEE</h1>
+          <h1 className="text-2xl font-bold">APIIT SPELLING BEE 2025</h1>
           <Link
             to="/"
             className="bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-lg transition-colors text-sm"
@@ -363,28 +436,50 @@ export const ViewPage: React.FC = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex items-center justify-center p-8">
-        {/* Show video if in video mode - fullscreen without controls */}
-        {displayMode === 'video' && videoUrl ? (
-          <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
-            <video
-              ref={videoRef}
-              src={videoUrl}
-              className="w-full h-full object-contain"
-              playsInline
-              key={videoUrl}
-              tabIndex={-1}
-            >
-              Your browser does not support the video tag.
-            </video>
-          </div>
-        ) : displayMode === 'video' && !videoUrl ? (
-          <div className="text-center">
-            <div className="text-8xl mb-8">🎬</div>
-            <h2 className="text-6xl font-bold text-slate-400 mb-4">Waiting for Video</h2>
-            <p className="text-3xl text-slate-500">
-              Select a video in Manage Screen
-            </p>
-          </div>
+        {/* Show media if in video mode - fullscreen without controls */}
+        {displayMode === 'video' ? (
+          videoUrl ? (
+            mediaType === 'image' ? (
+              isImageVisible ? (
+                <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
+                  <img
+                    src={videoUrl}
+                    alt="Quiz media"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              ) : (
+                <div className="text-center">
+                  <div className="text-8xl mb-8">🖼️</div>
+                  <h2 className="text-6xl font-bold text-slate-400 mb-4">Image Paused</h2>
+                  <p className="text-3xl text-slate-500">
+                    Press Play on Manage Screen to display the image
+                  </p>
+                </div>
+              )
+            ) : (
+              <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
+                <video
+                  ref={videoRef}
+                  src={videoUrl}
+                  className="w-full h-full object-contain"
+                  playsInline
+                  key={videoUrl}
+                  tabIndex={-1}
+                >
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+            )
+          ) : (
+            <div className="text-center">
+              <div className="text-8xl mb-8">🎬</div>
+              <h2 className="text-6xl font-bold text-slate-400 mb-4">Waiting for Media</h2>
+              <p className="text-3xl text-slate-500">
+                Select a video or image in Manage Screen
+              </p>
+            </div>
+          )
         ) : displayMode === 'timer' && timerEnded && !isResultVisible ? (
           /* Show waiting message during 5 second delay after timer ends */
           <div className="text-center">

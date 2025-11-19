@@ -19,6 +19,7 @@ export const JudgePage: React.FC = () => {
   const typedWordRef = useRef('');
   const currentWordRef = useRef('');
   const lastSubmittedSignatureRef = useRef<string>('');
+  const autoSubmitPendingRef = useRef(false);
 
   useEffect(() => {
     typedWordRef.current = typedWord;
@@ -27,6 +28,10 @@ export const JudgePage: React.FC = () => {
   useEffect(() => {
     currentWordRef.current = currentWord;
   }, [currentWord]);
+
+  useEffect(() => {
+    autoSubmitPendingRef.current = autoSubmitPending;
+  }, [autoSubmitPending]);
 
   const resetJudgeState = () => {
     setCurrentWord('');
@@ -38,7 +43,10 @@ export const JudgePage: React.FC = () => {
 
   const submitResult = (actualWord?: string, trigger: 'auto' | 'manual' = 'manual') => {
     const resolvedWord = (actualWord && actualWord.trim()) || currentWordRef.current.trim();
-    if (!resolvedWord) return;
+    if (!resolvedWord) {
+      console.warn('Cannot submit result: no word available');
+      return;
+    }
 
     const capturedTyped =
       trigger === 'manual' ? typedWord.trim() : typedWordRef.current.trim();
@@ -52,38 +60,44 @@ export const JudgePage: React.FC = () => {
     const displayTyped = capturedTyped || '—';
     const signature = `${resolvedWord.toLowerCase()}::${displayTyped.toLowerCase()}::${trigger}`;
 
-    if (
-      (trigger === 'auto' && signature === lastSubmittedSignatureRef.current) ||
-      (trigger === 'auto' && !capturedTyped)
-    ) {
+    if (trigger === 'auto' && signature === lastSubmittedSignatureRef.current) {
       return;
     }
     lastSubmittedSignatureRef.current = signature;
 
-    if (trigger === 'manual') {
-      broadcastManager.send({
-        type: 'judge',
-        judgeData: {
-          actualWord: resolvedWord,
-          typedWord: displayTyped,
-          isCorrect
-        }
-      });
+    // Always send judge result - this is the main message that displays on view screen
+    const judgeMessage: QuizMessage = {
+      type: 'judge',
+      judgeData: {
+        actualWord: resolvedWord,
+        typedWord: displayTyped,
+        isCorrect
+      }
+    };
+    
+    console.log('Sending judge result:', judgeMessage);
+    console.log('BroadcastChannel available:', typeof BroadcastChannel !== 'undefined');
+    broadcastManager.send(judgeMessage);
+    console.log('Judge result sent via broadcastManager');
 
-      if (status !== 'waiting') {
+    // Only send control 'end' for manual submissions if timer is running
+    // This ensures the result is displayed even if timer is still running
+    if (trigger === 'manual' && status !== 'waiting') {
+      // Send end control after a small delay to ensure judge message is processed first
+      setTimeout(() => {
         broadcastManager.send({
           type: 'control',
           control: {
             action: 'end'
           }
         });
-      }
-
-      setStatus('waiting');
-      setTimeLeft(0);
-      setCurrentWord('');
-      setTypedWord('');
+      }, 100);
     }
+
+    setStatus('waiting');
+    setTimeLeft(0);
+    setCurrentWord('');
+    setTypedWord('');
 
     setAutoSubmitPending(false);
   };
@@ -110,10 +124,16 @@ export const JudgePage: React.FC = () => {
           }
           setStatus('paused');
           break;
-        case 'end':
-          setStatus('waiting');
-          setTimeLeft(0);
+        case 'end': {
+          if (autoSubmitPendingRef.current) {
+            submitResult(message.data?.word, 'auto');
+          } else {
+            setStatus('waiting');
+            setTimeLeft(0);
+          }
+          setAutoSubmitPending(false);
           break;
+        }
         case 'clear':
           resetJudgeState();
           break;
@@ -199,7 +219,11 @@ export const JudgePage: React.FC = () => {
             />
             <div className="flex flex-wrap gap-3">
               <button
-                onClick={() => submitResult(undefined, 'manual')}
+                onClick={() => {
+                  console.log('Button clicked! currentWord:', currentWord, 'currentWordRef:', currentWordRef.current);
+                  console.log('typedWord:', typedWord);
+                  submitResult(undefined, 'manual');
+                }}
                 disabled={!currentWord}
                 className={`flex-1 px-4 py-3 rounded-xl font-semibold text-white transition-colors ${
                   currentWord

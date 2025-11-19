@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { soundManager } from '../utils/soundManager';
 import { broadcastManager } from '../utils/broadcast';
 
 interface TimerProps {
@@ -29,19 +28,21 @@ export const Timer: React.FC<TimerProps> = ({
         setTimeLeft(prev => {
           const newTime = prev - 1;
           
-          // Only control panel handles beeps and broadcasts it
+          // Only control panel broadcasts beep cues (sounds play on ViewPage)
           if (isControlPanel) {
-            // Beep sound announcements (replacing voice)
-            if (newTime === 50 || newTime === 40 || newTime === 30 || newTime === 20 || newTime === 10) {
-              soundManager.playCountdownBeep();
-              soundManager.playWarningSound();
-              // Broadcast beep to display screen
-              broadcastManager.sendSpeech(newTime, true);
+            if (
+              newTime === 50 ||
+              newTime === 40 ||
+              newTime === 30 ||
+              newTime === 20 ||
+              newTime === 10
+            ) {
+              if (lastBeepRef.current !== newTime) {
+                broadcastManager.sendSpeech(newTime, true);
+                lastBeepRef.current = newTime;
+              }
             } else if (newTime <= 10 && newTime > 0 && lastBeepRef.current !== newTime) {
-              soundManager.playCountdownBeep();
-              soundManager.playTickSound();
               lastBeepRef.current = newTime;
-              // Broadcast beep to display screen
               broadcastManager.sendSpeech(newTime, true);
             }
           }
@@ -49,10 +50,6 @@ export const Timer: React.FC<TimerProps> = ({
           onTick(newTime);
           
           if (newTime <= 0) {
-            // Play longer beep when timer ends
-            if (isControlPanel) {
-              soundManager.playTimerEndBeep();
-            }
             onEnd();
             return 0;
           }

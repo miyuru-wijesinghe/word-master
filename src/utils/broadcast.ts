@@ -27,6 +27,7 @@ export interface QuizMessage {
     isPlaying: boolean;
     action?: 'play' | 'pause' | 'stop';
     displayMode?: 'timer' | 'video';
+    mediaType?: 'video' | 'image';
   };
   judgeData?: {
     actualWord: string;
@@ -43,8 +44,16 @@ class BroadcastManager {
   constructor() {
     this.channel = new BroadcastChannel('quizSync');
     this.channel.onmessage = (event) => {
-      this.listeners.forEach(listener => listener(event.data));
+      console.log('BroadcastChannel received message:', event.data);
+      this.listeners.forEach(listener => {
+        try {
+          listener(event.data);
+        } catch (error) {
+          console.error('Error in broadcast listener:', error);
+        }
+      });
     };
+    console.log('BroadcastChannel initialized with name: quizSync');
 
     // Also listen to Firebase for cross-device sync
     if (firebaseSyncManager.isFirebaseEnabled()) {
@@ -63,8 +72,14 @@ class BroadcastManager {
   }
 
   send(message: QuizMessage) {
+    console.log('BroadcastManager.send called with:', message);
     // Send via BroadcastChannel for same-device sync (fast, immediate)
-    this.channel.postMessage(message);
+    try {
+      this.channel.postMessage(message);
+      console.log('Message posted to BroadcastChannel');
+    } catch (error) {
+      console.error('Error posting to BroadcastChannel:', error);
+    }
     
     // Also send via Firebase for cross-device sync
     if (firebaseSyncManager.isFirebaseEnabled()) {
