@@ -36,7 +36,7 @@ export const ViewPage: React.FC = () => {
     }
   };
 
-  const startResultWindow = (wordToShow?: string, immediate: boolean = false, preserveJudgeResult: boolean = false) => {
+  const startResultWindow = (wordToShow?: string, immediate: boolean = false) => {
     clearResultTimers();
     if (wordToShow) {
       setPendingWord(wordToShow);
@@ -54,7 +54,6 @@ export const ViewPage: React.FC = () => {
         soundManager.playWordClearBeep();
         setIsResultVisible(false);
         setPendingWord('');
-        // Clear judgeResult after display (always clear, preserveJudgeResult just prevents early clearing)
         setJudgeResult(null);
         setTimerEnded(false);
         resultHideTimeoutRef.current = null;
@@ -303,7 +302,7 @@ export const ViewPage: React.FC = () => {
             setJudgeResult(message.judgeData);
             // Use startResultWindow with immediate=true and preserveJudgeResult=true
             // This shows the result immediately just like timer end, but preserves judgeResult
-            startResultWindow(message.judgeData.actualWord, true, true);
+            startResultWindow(message.judgeData.actualWord, true);
             // Sounds will be played when result becomes visible (see useEffect below)
           }
           break;
