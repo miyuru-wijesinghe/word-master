@@ -324,9 +324,9 @@ export const ViewPage: React.FC = () => {
             setDisplayMode('timer');
             // Set judge result FIRST so it's available when result window shows
             setJudgeResult(message.judgeData);
-            // Use startResultWindow with immediate=true and preserveJudgeResult=true
-            // This shows the result immediately just like timer end, but preserves judgeResult
-            startResultWindow(message.judgeData.actualWord, true);
+            // Use startResultWindow without immediate flag - wait like timer end
+            // This shows the result after delay, same as timer end
+            startResultWindow(message.judgeData.actualWord, false);
             // Sounds will be played when result becomes visible (see useEffect below)
           }
           break;
