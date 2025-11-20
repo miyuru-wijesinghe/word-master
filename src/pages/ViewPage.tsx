@@ -24,6 +24,7 @@ export const ViewPage: React.FC = () => {
   const resultDelayTimeoutRef = useRef<number | null>(null);
   const resultHideTimeoutRef = useRef<number | null>(null);
   const mediaTypeRef = useRef<'video' | 'image'>('video');
+  const wasRunningRef = useRef<boolean>(false);
 
   const clearResultTimers = () => {
     if (resultDelayTimeoutRef.current !== null) {
@@ -125,6 +126,16 @@ export const ViewPage: React.FC = () => {
           // Only update ViewPage if timer is actually running (isRunning === true)
           // Don't update on row selection - that's only for ManageScreen
           if (message.data && message.data.isRunning) {
+            const wasRunning = wasRunningRef.current;
+            const isNowRunning = message.data.isRunning;
+            
+            // Play start beep when timer first starts (transitions from not running to running)
+            if (!wasRunning && isNowRunning) {
+              soundManager.ensureAudioContext();
+              soundManager.playStartSound();
+              console.log('Timer started - playing start beep');
+            }
+            
             setTimeLeft(message.data.timeLeft);
             setIsRunning(message.data.isRunning);
             setIsPaused(!message.data.isRunning);
@@ -133,6 +144,7 @@ export const ViewPage: React.FC = () => {
             setIsResultVisible(false);
             setJudgeResult(null);
             clearResultTimers();
+            wasRunningRef.current = isNowRunning;
           }
           // If message.data.isRunning is false or missing, ignore it (row selection)
           break;
@@ -150,13 +162,24 @@ export const ViewPage: React.FC = () => {
         case 'pause':
           setIsPaused(true);
           setIsRunning(false);
+          wasRunningRef.current = false;
           break;
         case 'end':
           clearResultTimers();
+          wasRunningRef.current = false;
           if (message.data && message.data.word) {
+            const wordToShow = message.data.word;
             soundManager.ensureAudioContext();
             soundManager.playTimerEndBeep();
-            startResultWindow(message.data.word);
+            // Clear states first to prevent UI flash, then show result window
+            setTimerEnded(false);
+            setIsResultVisible(false);
+            setIsRunning(false);
+            setIsPaused(false);
+            // Use setTimeout to ensure state is cleared before showing result window
+            setTimeout(() => {
+              startResultWindow(wordToShow);
+            }, 0);
           } else {
             setTimerEnded(false);
             setIsResultVisible(false);
@@ -183,6 +206,7 @@ export const ViewPage: React.FC = () => {
           setMediaType('video');
           setIsImageVisible(false);
           setJudgeResult(null);
+          wasRunningRef.current = false;
           lastBeepRef.current = -1;
           break;
         case 'video':
@@ -508,7 +532,7 @@ export const ViewPage: React.FC = () => {
         ) : (
           <div className="text-center">
             <div className="text-8xl mb-8">🎯</div>
-            <h2 className="text-6xl font-bold text-slate-400 mb-4">🐝Get Set...The Next Word’s Coming!</h2>
+            <h2 className="text-6xl font-bold text-slate-400 mb-4">🐝Next Word Loading... Get Ready to Spell!</h2>
           </div>
         )}
       </div>
