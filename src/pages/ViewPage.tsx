@@ -171,15 +171,14 @@ export const ViewPage: React.FC = () => {
             const wordToShow = message.data.word;
             soundManager.ensureAudioContext();
             soundManager.playTimerEndBeep();
-            // Clear states first to prevent UI flash, then show result window
-            setTimerEnded(false);
-            setIsResultVisible(false);
+            // Set all states together in one batch to prevent flash
+            // timerEnded must be set at the same time as isRunning(false) to avoid showing default screen
             setIsRunning(false);
             setIsPaused(false);
-            // Use setTimeout to ensure state is cleared before showing result window
-            setTimeout(() => {
-              startResultWindow(wordToShow);
-            }, 0);
+            setTimerEnded(true);
+            setIsResultVisible(false);
+            // Then call startResultWindow which will handle the delay and result display
+            startResultWindow(wordToShow);
           } else {
             setTimerEnded(false);
             setIsResultVisible(false);
