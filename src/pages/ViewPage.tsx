@@ -187,7 +187,21 @@ export const ViewPage: React.FC = () => {
           break;
         case 'control':
           // Handle control messages directly (e.g., from ManageScreen)
-          if (message.control?.action === 'end') {
+          if (message.control?.action === 'pause') {
+            console.log('ViewPage: Received control pause message', { isRunning, isPaused });
+            // Toggle pause state - only if timer is actually running or paused
+            if (isRunning || isPaused) {
+              setIsPaused(prevPaused => {
+                const newPaused = !prevPaused;
+                setIsRunning(!newPaused);
+                wasRunningRef.current = !newPaused;
+                console.log('ViewPage: Toggling pause state', { from: prevPaused, to: newPaused, isRunning: !newPaused });
+                return newPaused;
+              });
+            } else {
+              console.log('ViewPage: Ignoring pause - timer not active');
+            }
+          } else if (message.control?.action === 'end') {
             console.log('ViewPage: Received control end message');
             wasRunningRef.current = false;
             // If we already have a judge result (check both state and ref), don't process 'end' message

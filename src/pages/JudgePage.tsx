@@ -187,7 +187,18 @@ export const JudgePage: React.FC = () => {
           break;
         case 'control':
           // Handle control messages directly (e.g., from ManageScreen)
-          if (message.control?.action === 'end') {
+          if (message.control?.action === 'pause') {
+            console.log('JudgePage: Received control pause message');
+            // Toggle pause state
+            setStatus(prevStatus => {
+              if (prevStatus === 'running') {
+                return 'paused';
+              } else if (prevStatus === 'paused') {
+                return 'running';
+              }
+              return prevStatus;
+            });
+          } else if (message.control?.action === 'end') {
             console.log('JudgePage: Received control end message');
             if (autoSubmitPendingRef.current) {
               // If auto-submit is pending, submit the result

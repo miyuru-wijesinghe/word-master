@@ -104,13 +104,13 @@ export const ManageScreen: React.FC = () => {
         setIsPaused(false);
         setTimeLeft(0);
         // If message has word data, timer ended naturally - show end screen
-        // If no word data, End button was pressed - already handled in handleEnd
+        // If message has word data, timer ended naturally - show end screen
         if (message.data && message.data.word) {
           setTimerEnded(true);
           setCurrentWord(message.data.word);
           setHasStarted(false);
         } else {
-          // End button was pressed - clear everything (already handled in handleEnd)
+          // End was triggered - clear everything
           resetAfterEnd();
         }
       }
@@ -192,17 +192,6 @@ export const ManageScreen: React.FC = () => {
     broadcastManager.send(message);
   };
 
-  const handleEnd = () => {
-    const message: QuizMessage = {
-      type: 'control',
-      control: {
-        action: 'end'
-      }
-    };
-    broadcastManager.send(message);
-    // Clear the end screen when End button is pressed
-    resetAfterEnd();
-  };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -276,7 +265,13 @@ export const ManageScreen: React.FC = () => {
                 setDisplayMode('video');
                 // Stop timer if switching to video
                 if (isRunning || isPaused) {
-                  handleEnd();
+                  broadcastManager.send({
+                    type: 'control',
+                    control: {
+                      action: 'end'
+                    }
+                  });
+                  resetAfterEnd();
                 }
                 // Always broadcast mode change to video, even if no video is loaded yet
                 broadcastManager.send({
@@ -496,18 +491,6 @@ export const ManageScreen: React.FC = () => {
                 }`}
               >
                 {isPaused ? '▶️ Resume' : '⏸️ Pause'}
-              </button>
-              
-              <button
-                onClick={handleEnd}
-                disabled={!isRunning && !isPaused && !hasStarted && !timerEnded}
-                className={`px-10 py-5 rounded-xl font-bold text-lg transition-all duration-200 transform ${
-                  !isRunning && !isPaused && !hasStarted && !timerEnded
-                    ? 'bg-gray-400 cursor-not-allowed text-white'
-                    : 'bg-red-600 hover:bg-red-700 text-white hover:scale-110 shadow-xl hover:shadow-2xl'
-                }`}
-              >
-                ⏹️ End
               </button>
             </div>
           </div>

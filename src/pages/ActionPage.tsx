@@ -148,29 +148,30 @@ export const ActionPage: React.FC = () => {
           case 'pause':
             setIsPaused(prevPaused => {
               const newPaused = !prevPaused;
+              // Update isRunning state immediately
+              setIsRunning(!newPaused);
               
-              setCurrentStudent(prev => {
-                setCurrentWord(prevWord => {
-                  setTimeLeft(prevTime => {
-                    const pauseMessage: QuizMessage = {
-                      type: newPaused ? 'pause' : 'update',
-                      data: {
-                        student: prev,
-                        word: prevWord,
-                        timeLeft: prevTime,
-                        isRunning: !newPaused
-                      },
-                      selectedEntries: selectedRows.map(i => ({
-                        word: quizData[i].Word,
-                        team: quizData[i].Team
-                      }))
-                    };
-                    broadcastManager.send(pauseMessage);
-                    return prevTime;
-                  });
-                  return prevWord;
-                });
-                return prev;
+              // Use refs to get latest values for broadcast message
+              const currentWordValue = currentWordRef.current;
+              const currentStudentValue = currentStudentRef.current;
+              
+              // Get timeLeft from state - we'll use a functional update to ensure we have the latest value
+              setTimeLeft(prevTime => {
+                const pauseMessage: QuizMessage = {
+                  type: newPaused ? 'pause' : 'update',
+                  data: {
+                    student: currentStudentValue,
+                    word: currentWordValue,
+                    timeLeft: prevTime,
+                    isRunning: !newPaused
+                  },
+                  selectedEntries: selectedRowsRef.current.map(i => ({
+                    word: quizDataRef.current[i].Word,
+                    team: quizDataRef.current[i].Team
+                  }))
+                };
+                broadcastManager.send(pauseMessage);
+                return prevTime;
               });
               
               return newPaused;
