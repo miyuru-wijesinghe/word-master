@@ -20,6 +20,7 @@ export const JudgePage: React.FC = () => {
   const currentWordRef = useRef('');
   const lastSubmittedSignatureRef = useRef<string>('');
   const autoSubmitPendingRef = useRef(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     typedWordRef.current = typedWord;
@@ -49,19 +50,24 @@ export const JudgePage: React.FC = () => {
       return;
     }
 
-    // For manual submissions, capture from both state and ref to ensure we get the value
-    // Use whichever has content (prefer state, but use ref if state is empty)
+    // For manual submissions, ALWAYS use ref as primary source because:
+    // 1. Ref is updated synchronously in onChange handler (guaranteed current)
+    // 2. State might be stale if button is clicked before React processes the update
+    // 3. State is only used as fallback if ref is somehow not updated
+    // 4. As last resort, read directly from textarea DOM element
     // For auto submissions, use ref (state might be cleared by then)
     const refValue = (typedWordRef.current || '').trim();
     const stateValue = (typedWord || '').trim();
+    // Last resort: read directly from textarea DOM element
+    const domValue = (textareaRef.current?.value || '').trim();
     
-    // For manual: prefer state, but if state is empty and ref has value, use ref
-    // This handles cases where state update hasn't propagated yet
+    // For manual: prefer ref (always current), then DOM, then state as fallback
+    // This ensures we get the latest value even if React hasn't processed state update
     let capturedTyped: string;
     if (trigger === 'manual') {
-      // Use state if it has content, otherwise use ref
-      capturedTyped = stateValue || refValue;
-      // If both are empty, that's okay - we'll send empty string
+      // Use ref first (guaranteed current from onChange), then DOM, then state as fallback
+      capturedTyped = refValue || domValue || stateValue;
+      // If all are empty, that's okay - we'll send empty string
     } else {
       // For auto, only use ref
       capturedTyped = refValue;
@@ -71,7 +77,9 @@ export const JudgePage: React.FC = () => {
       trigger,
       fromRef: typedWordRef.current,
       fromState: typedWord,
+      fromDOM: textareaRef.current?.value,
       refValue,
+      domValue,
       stateValue,
       captured: capturedTyped,
       capturedLength: capturedTyped.length
@@ -265,6 +273,7 @@ export const JudgePage: React.FC = () => {
           <div className="bg-white rounded-2xl shadow p-6 flex flex-col gap-4">
             <h2 className="text-xl font-semibold text-slate-800">Spell Capture</h2>
             <textarea
+              ref={textareaRef}
               value={typedWord}
               onChange={(e) => {
                 const newValue = e.target.value;
@@ -293,7 +302,11 @@ export const JudgePage: React.FC = () => {
                 📤 Send Result Now
               </button>
               <button
-                onClick={() => setTypedWord('')}
+                onClick={() => {
+                  setTypedWord('');
+                  // Also clear ref immediately to keep them in sync
+                  typedWordRef.current = '';
+                }}
                 className="px-4 py-3 rounded-xl font-semibold border-2 border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
               >
                 Clear
