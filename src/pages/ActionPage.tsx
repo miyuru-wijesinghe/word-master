@@ -16,7 +16,10 @@ export const ActionPage: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState(60);
   const [currentStudent, setCurrentStudent] = useState('');
   const [currentWord, setCurrentWord] = useState('');
+  const [judgeResult, setJudgeResult] = useState<{ isCorrect: boolean; actualWord: string; typedWord: string } | null>(null);
+  const [showJudgeAlert, setShowJudgeAlert] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const judgeAlertTimeoutRef = useRef<number | null>(null);
 
   // Handle row selection - single selection, don't start
   const handleSelectRow = (index: number) => {
@@ -62,9 +65,32 @@ export const ActionPage: React.FC = () => {
     });
   };
 
-  // Listen for control messages from ManageScreen
+  // Listen for control messages from ManageScreen and judge results
   useEffect(() => {
     const unsubscribe = broadcastManager.listen((message: QuizMessage) => {
+      // Handle judge results - show alert on control panel
+      if (message.type === 'judge' && message.judgeData) {
+        console.log('Control Panel: Received judge result:', message.judgeData);
+        setJudgeResult({
+          isCorrect: message.judgeData.isCorrect,
+          actualWord: message.judgeData.actualWord,
+          typedWord: message.judgeData.typedWord
+        });
+        setShowJudgeAlert(true);
+        console.log('Control Panel: Alert should be visible now');
+        
+        // Clear previous timeout if exists
+        if (judgeAlertTimeoutRef.current) {
+          clearTimeout(judgeAlertTimeoutRef.current);
+        }
+        
+        // Auto-hide alert after 8 seconds (increased for better visibility)
+        judgeAlertTimeoutRef.current = window.setTimeout(() => {
+          setShowJudgeAlert(false);
+          setJudgeResult(null);
+        }, 8000);
+      }
+      
       if (message.type === 'control' && message.control) {
         const { action, addSeconds } = message.control;
         
@@ -139,16 +165,19 @@ export const ActionPage: React.FC = () => {
             });
             break;
           case 'end':
-            // Get current word before clearing it
-            const wordToShow = currentWord || (startedRow !== null && quizData[startedRow] ? quizData[startedRow].Word : '');
+            // Get current word before clearing it - use refs to ensure we get the latest value
+            const wordToShow = currentWordRef.current || (startedRow !== null && quizDataRef.current[startedRow] ? quizDataRef.current[startedRow].Word : '');
             
+            // Stop timer immediately - set states first
             setIsRunning(false);
             setIsPaused(false);
             setTimeLeft(60);
             setCurrentStudent('');
             setCurrentWord('');
+            currentWordRef.current = ''; // Clear ref value too
             setStartedRow(null);
             
+            // Broadcast end message with word included
             const endMessage: QuizMessage = {
               type: 'end',
               data: {
@@ -157,9 +186,9 @@ export const ActionPage: React.FC = () => {
                 timeLeft: 0,
                 isRunning: false
               },
-              selectedEntries: selectedRows.map(i => ({
-                word: quizData[i].Word,
-                team: quizData[i].Team
+              selectedEntries: selectedRowsRef.current.map(i => ({
+                word: quizDataRef.current[i].Word,
+                team: quizDataRef.current[i].Team
               }))
             };
             broadcastManager.send(endMessage);
@@ -192,6 +221,9 @@ export const ActionPage: React.FC = () => {
 
     return () => {
       unsubscribe();
+      if (judgeAlertTimeoutRef.current) {
+        clearTimeout(judgeAlertTimeoutRef.current);
+      }
     };
   }, [selectedRows, quizData, currentStudent, currentWord, isRunning, isPaused, timeLeft]);
 
@@ -267,12 +299,29 @@ export const ActionPage: React.FC = () => {
       return;
     }
 
+    // Show loading state
+    const originalButtonText = event.target.parentElement?.querySelector('button')?.textContent;
+    const button = event.target.parentElement?.querySelector('button');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Uploading...';
+    }
+
     try {
+      // Use setTimeout to yield to browser, making UI responsive
+      await new Promise(resolve => setTimeout(resolve, 0));
+      
+      // Parse file asynchronously
       const data = await parseExcelFile(file);
+      
+      // Yield again before state updates
+      await new Promise(resolve => setTimeout(resolve, 0));
+      
       if (data.length === 0) {
         alert('No valid data found in the Excel file');
         return;
       }
+      
       setQuizData(data);
       setSelectedRows([]);
       setStartedRow(null);
@@ -283,6 +332,18 @@ export const ActionPage: React.FC = () => {
       setCurrentWord('');
     } catch (error) {
       alert(`Error parsing Excel file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      // Restore button state
+      if (button) {
+        button.disabled = false;
+        if (originalButtonText) {
+          button.textContent = originalButtonText;
+        }
+      }
+      // Clear file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -371,6 +432,38 @@ export const ActionPage: React.FC = () => {
   // Ref to track last beep time
   const lastBeepRef = useRef<number>(-1);
   
+  // Refs to store current values for timer interval (prevents interval restart on state changes)
+  const currentWordRef = useRef(currentWord);
+  const currentStudentRef = useRef(currentStudent);
+  const selectedRowsRef = useRef(selectedRows);
+  const quizDataRef = useRef(quizData);
+  const isRunningRef = useRef(isRunning);
+  const isPausedRef = useRef(isPaused);
+
+  useEffect(() => {
+    currentWordRef.current = currentWord;
+  }, [currentWord]);
+
+  useEffect(() => {
+    currentStudentRef.current = currentStudent;
+  }, [currentStudent]);
+
+  useEffect(() => {
+    selectedRowsRef.current = selectedRows;
+  }, [selectedRows]);
+
+  useEffect(() => {
+    quizDataRef.current = quizData;
+  }, [quizData]);
+
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+
   // Timer interval - runs when timer is active
   useEffect(() => {
     let intervalId: number | null = null;
@@ -378,6 +471,11 @@ export const ActionPage: React.FC = () => {
     if (isRunning && !isPaused) {
       intervalId = window.setInterval(() => {
         setTimeLeft(prev => {
+          // Check if timer was stopped externally
+          if (!isRunningRef.current || isPausedRef.current) {
+            return prev;
+          }
+
           const newTime = prev - 1;
           
           if (newTime <= 0) {
@@ -391,13 +489,13 @@ export const ActionPage: React.FC = () => {
               type: 'end',
               data: {
                 student: '',
-                word: currentWord,
+                word: currentWordRef.current,
                 timeLeft: 0,
                 isRunning: false
               },
-              selectedEntries: selectedRows.map(i => ({
-                word: quizData[i].Word,
-                team: quizData[i].Team
+              selectedEntries: selectedRowsRef.current.map(i => ({
+                word: quizDataRef.current[i].Word,
+                team: quizDataRef.current[i].Team
               }))
             };
             broadcastManager.send(endMessage);
@@ -426,14 +524,14 @@ export const ActionPage: React.FC = () => {
           const updateMessage: QuizMessage = {
             type: 'update',
             data: {
-              student: currentStudent,
-              word: currentWord,
+              student: currentStudentRef.current,
+              word: currentWordRef.current,
               timeLeft: newTime,
               isRunning: true
             },
-            selectedEntries: selectedRows.map(i => ({
-              word: quizData[i].Word,
-              team: quizData[i].Team
+            selectedEntries: selectedRowsRef.current.map(i => ({
+              word: quizDataRef.current[i].Word,
+              team: quizDataRef.current[i].Team
             }))
           };
           broadcastManager.send(updateMessage);
@@ -446,9 +544,10 @@ export const ActionPage: React.FC = () => {
     return () => {
       if (intervalId !== null) {
         clearInterval(intervalId);
+        intervalId = null;
       }
     };
-  }, [isRunning, isPaused, selectedRows, quizData, currentStudent, currentWord]);
+  }, [isRunning, isPaused]); // Only depend on isRunning and isPaused
 
   // Save selected data as new Excel file
   const handleSaveData = () => {
@@ -497,6 +596,88 @@ export const ActionPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
+      {/* Judge Result Alert */}
+      {showJudgeAlert && judgeResult && (
+        <>
+          {/* Backdrop overlay */}
+          <div 
+            className="fixed inset-0 bg-black/30 z-[9998]" 
+            onClick={() => {
+              setShowJudgeAlert(false);
+              setJudgeResult(null);
+              if (judgeAlertTimeoutRef.current) {
+                clearTimeout(judgeAlertTimeoutRef.current);
+              }
+            }}
+          />
+          {/* Alert card */}
+          <div 
+            className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[9999] max-w-2xl w-full mx-4" 
+            style={{ pointerEvents: 'auto', position: 'fixed' }}
+          >
+          <div
+            className={`rounded-2xl border-4 shadow-2xl p-6 animate-slide-down ${
+              judgeResult.isCorrect
+                ? 'bg-gradient-to-br from-green-500 to-emerald-600 border-green-400'
+                : 'bg-gradient-to-br from-red-500 to-rose-600 border-red-400'
+            }`}
+            style={{ 
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+              animation: 'slide-down 0.3s ease-out'
+            }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-4">
+                <div className={`text-5xl ${judgeResult.isCorrect ? 'text-green-100' : 'text-red-100'}`}>
+                  {judgeResult.isCorrect ? '✅' : '❌'}
+                </div>
+                <div>
+                  <h3 className={`text-3xl font-bold ${judgeResult.isCorrect ? 'text-green-50' : 'text-red-50'}`}>
+                    {judgeResult.isCorrect ? 'CORRECT!' : 'INCORRECT'}
+                  </h3>
+                  <p className={`text-lg ${judgeResult.isCorrect ? 'text-green-100' : 'text-red-100'}`}>
+                    Judge Result Received
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowJudgeAlert(false);
+                  setJudgeResult(null);
+                  if (judgeAlertTimeoutRef.current) {
+                    clearTimeout(judgeAlertTimeoutRef.current);
+                  }
+                }}
+                className={`text-2xl hover:opacity-80 transition-opacity ${
+                  judgeResult.isCorrect ? 'text-green-100' : 'text-red-100'
+                }`}
+              >
+                ×
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <div className={`rounded-xl p-4 ${judgeResult.isCorrect ? 'bg-green-600/50' : 'bg-red-600/50'}`}>
+                <p className={`text-sm font-semibold mb-2 ${judgeResult.isCorrect ? 'text-green-100' : 'text-red-100'}`}>
+                  Correct Word
+                </p>
+                <p className={`text-2xl font-bold ${judgeResult.isCorrect ? 'text-green-50' : 'text-red-50'}`}>
+                  {judgeResult.actualWord}
+                </p>
+              </div>
+              <div className={`rounded-xl p-4 ${judgeResult.isCorrect ? 'bg-green-600/50' : 'bg-red-600/50'}`}>
+                <p className={`text-sm font-semibold mb-2 ${judgeResult.isCorrect ? 'text-green-100' : 'text-red-100'}`}>
+                  Spelled Word
+                </p>
+                <p className={`text-2xl font-bold ${judgeResult.isCorrect ? 'text-green-50' : 'text-red-50'}`}>
+                  {judgeResult.typedWord}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        </>
+      )}
+      
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="mb-8">

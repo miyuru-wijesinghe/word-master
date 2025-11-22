@@ -42,6 +42,7 @@ export const JudgePage: React.FC = () => {
   };
 
   const submitResult = (actualWord?: string, trigger: 'auto' | 'manual' = 'manual') => {
+    // Preserve word before clearing state - critical for manual submissions
     const resolvedWord = (actualWord && actualWord.trim()) || currentWordRef.current.trim();
     if (!resolvedWord) {
       console.warn('Cannot submit result: no word available');
@@ -80,10 +81,9 @@ export const JudgePage: React.FC = () => {
     broadcastManager.send(judgeMessage);
     console.log('Judge result sent via broadcastManager');
 
-    // Only send control 'end' for manual submissions if timer is running
-    // This ensures the result is displayed even if timer is still running
-    if (trigger === 'manual' && status !== 'waiting') {
-      // Send end control after a small delay to ensure judge message is processed first
+    // For manual submissions, send control 'end' to stop timer
+    // But delay it slightly to ensure judge message is processed first
+    if (trigger === 'manual') {
       setTimeout(() => {
         broadcastManager.send({
           type: 'control',
@@ -91,9 +91,10 @@ export const JudgePage: React.FC = () => {
             action: 'end'
           }
         });
-      }, 100);
+      }, 200);
     }
 
+    // Clear state after sending messages
     setStatus('waiting');
     setTimeLeft(0);
     setCurrentWord('');

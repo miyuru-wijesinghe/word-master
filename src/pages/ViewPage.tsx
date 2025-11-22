@@ -25,6 +25,7 @@ export const ViewPage: React.FC = () => {
   const resultHideTimeoutRef = useRef<number | null>(null);
   const mediaTypeRef = useRef<'video' | 'image'>('video');
   const wasRunningRef = useRef<boolean>(false);
+  const judgeResultRef = useRef<QuizMessage['judgeData'] | null>(null);
 
   const clearResultTimers = () => {
     if (resultDelayTimeoutRef.current !== null) {
@@ -37,7 +38,7 @@ export const ViewPage: React.FC = () => {
     }
   };
 
-  const startResultWindow = (wordToShow?: string, immediate: boolean = false) => {
+  const startResultWindow = (wordToShow?: string, immediate: boolean = false, preserveJudgeResult: boolean = false) => {
     clearResultTimers();
     if (wordToShow) {
       setPendingWord(wordToShow);
@@ -49,20 +50,25 @@ export const ViewPage: React.FC = () => {
     if (immediate) {
       // Show immediately - no delay
       setIsResultVisible(true);
+      console.log('Result window shown immediately, preserveJudgeResult:', preserveJudgeResult);
       
       resultHideTimeoutRef.current = window.setTimeout(() => {
         soundManager.ensureAudioContext();
         soundManager.playWordClearBeep();
         setIsResultVisible(false);
         setPendingWord('');
-        setJudgeResult(null);
+        if (!preserveJudgeResult) {
+          setJudgeResult(null);
+        }
         setTimerEnded(false);
         resultHideTimeoutRef.current = null;
       }, RESULT_DISPLAY_MS);
     } else {
       // Normal flow with delay
       setIsResultVisible(false);
+      console.log('Starting result window delay, preserveJudgeResult:', preserveJudgeResult, 'wordToShow:', wordToShow);
       resultDelayTimeoutRef.current = window.setTimeout(() => {
+        console.log('Result delay timeout fired, showing result now');
         setIsResultVisible(true);
         resultDelayTimeoutRef.current = null;
 
@@ -71,7 +77,9 @@ export const ViewPage: React.FC = () => {
           soundManager.playWordClearBeep();
           setIsResultVisible(false);
           setPendingWord('');
-          setJudgeResult(null);
+          if (!preserveJudgeResult) {
+            setJudgeResult(null);
+          }
           setTimerEnded(false);
           resultHideTimeoutRef.current = null;
         }, RESULT_DISPLAY_MS);
@@ -97,6 +105,11 @@ export const ViewPage: React.FC = () => {
       document.removeEventListener('touchstart', handleInteraction);
     };
   }, []);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    judgeResultRef.current = judgeResult;
+  }, [judgeResult]);
 
   // Play beep sounds when Latest Result becomes visible
   useEffect(() => {
@@ -140,9 +153,13 @@ export const ViewPage: React.FC = () => {
             setIsRunning(message.data.isRunning);
             setIsPaused(!message.data.isRunning);
             setTimerEnded(false);
-            setPendingWord('');
-            setIsResultVisible(false);
-            setJudgeResult(null);
+            // Only clear result-related states if we're not showing a result
+            // This prevents clearing judge result when timer updates come in
+            if (!isResultVisible && !judgeResultRef.current) {
+              setPendingWord('');
+              setIsResultVisible(false);
+              setJudgeResult(null);
+            }
             clearResultTimers();
             wasRunningRef.current = isNowRunning;
           }
@@ -165,8 +182,15 @@ export const ViewPage: React.FC = () => {
           wasRunningRef.current = false;
           break;
         case 'end':
-          clearResultTimers();
           wasRunningRef.current = false;
+          // If we already have a judge result (check both state and ref), don't process 'end' message
+          // The judge result should take precedence - DON'T clear timers if judge result exists
+          if (judgeResult || judgeResultRef.current) {
+            console.log('Ignoring end message - judge result already exists, preserving result timers', { judgeResult, ref: judgeResultRef.current });
+            break;
+          }
+          // Only clear timers if we don't have a judge result
+          clearResultTimers();
           if (message.data && message.data.word) {
             const wordToShow = message.data.word;
             soundManager.ensureAudioContext();
@@ -177,7 +201,6 @@ export const ViewPage: React.FC = () => {
             setIsPaused(false);
             setTimerEnded(true);
             setIsResultVisible(false);
-            // Then call startResultWindow which will handle the delay and result display
             startResultWindow(wordToShow);
           } else {
             setTimerEnded(false);
@@ -318,14 +341,23 @@ export const ViewPage: React.FC = () => {
         case 'judge':
           if (message.judgeData) {
             console.log('Received judge result on view page:', message.judgeData);
-            // Use the same flow as timer end - call startResultWindow
+            // Clear any existing result timers first
+            clearResultTimers();
             // Ensure we're in timer mode to display results
             setDisplayMode('timer');
-            // Set judge result FIRST so it's available when result window shows
+            // Set judge result FIRST (both state and ref) so it's available when result window shows
+            // This prevents 'end' messages from clearing it
             setJudgeResult(message.judgeData);
-            // Use startResultWindow without immediate flag - wait like timer end
-            // This shows the result after delay, same as timer end
-            startResultWindow(message.judgeData.actualWord, false);
+            judgeResultRef.current = message.judgeData; // Update ref immediately
+            console.log('Judge result set (state and ref):', message.judgeData);
+            // Stop timer states
+            setIsRunning(false);
+            setIsPaused(false);
+            setTimerEnded(true);
+            // Use startResultWindow with preserveJudgeResult=true to keep judge result visible
+            // This shows the result after delay, same as timer end, but preserves judge data
+            startResultWindow(message.judgeData.actualWord, false, true);
+            console.log('Judge result processed, result will show after', RESULT_DELAY_MS, 'ms delay');
             // Sounds will be played when result becomes visible (see useEffect below)
           }
           break;
@@ -536,60 +568,62 @@ export const ViewPage: React.FC = () => {
         )}
       </div>
       {displayMode === 'timer' && isResultVisible && (
-        <div className="px-8 pb-10">
-          <div
-            className={`max-w-6xl mx-auto rounded-3xl border-2 p-6 text-center ${
-              judgeResult
-                ? judgeResult.isCorrect
-                  ? 'bg-green-900/40 border-green-500 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
-                  : 'bg-red-900/40 border-red-500 shadow-[0_0_30px_rgba(248,113,113,0.3)]'
-                : 'bg-slate-900/40 border-white/10'
-            }`}
-          >
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-              <div className="text-left">
-                <h3 className="text-3xl font-bold">Latest Result</h3>
+        <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 pb-8 lg:pb-10 overflow-x-hidden">
+          <div className="w-full max-w-7xl mx-auto">
+            <div
+              className={`w-full rounded-3xl border-2 p-4 sm:p-6 lg:p-8 text-center ${
+                judgeResult
+                  ? judgeResult.isCorrect
+                    ? 'bg-green-900/40 border-green-500 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
+                    : 'bg-red-900/40 border-red-500 shadow-[0_0_30px_rgba(248,113,113,0.3)]'
+                  : 'bg-slate-900/40 border-white/10'
+              }`}
+            >
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4 lg:mb-6">
+                <div className="text-left">
+                  <h3 className="text-2xl sm:text-3xl lg:text-4xl font-bold">Latest Result</h3>
+                  {judgeResult && (
+                    <p className={`text-xl sm:text-2xl lg:text-3xl font-semibold mt-2 ${judgeResult.isCorrect ? 'text-green-300' : 'text-red-300'}`}>
+                      {judgeResult.isCorrect ? 'Your word is correct!' : 'Your word is incorrect.'}
+                    </p>
+                  )}
+                </div>
                 {judgeResult && (
-                  <p className={`text-2xl font-semibold mt-2 ${judgeResult.isCorrect ? 'text-green-300' : 'text-red-300'}`}>
-                    {judgeResult.isCorrect ? 'Your word is correct!' : 'Your word is incorrect.'}
-                  </p>
+                  <span
+                    className={`px-4 sm:px-6 py-2 rounded-full text-lg sm:text-xl lg:text-2xl font-semibold whitespace-nowrap ${
+                      judgeResult.isCorrect ? 'bg-green-500 text-slate-900' : 'bg-red-500 text-white'
+                    }`}
+                  >
+                    {judgeResult.isCorrect ? 'Correct' : 'Incorrect'}
+                  </span>
                 )}
               </div>
-              {judgeResult && (
-                <span
-                  className={`px-6 py-2 rounded-full text-xl font-semibold ${
-                    judgeResult.isCorrect ? 'bg-green-500 text-slate-900' : 'bg-red-500 text-white'
+              <div className="grid gap-4 sm:gap-6 lg:gap-8 md:grid-cols-2 text-left">
+                <div
+                  className={`rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl ${
+                    judgeResult
+                      ? judgeResult.isCorrect
+                        ? 'bg-gradient-to-br from-emerald-900/70 via-emerald-950 to-slate-950 border-emerald-400/60'
+                        : 'bg-gradient-to-br from-rose-900/70 via-rose-950 to-slate-950 border-rose-400/60'
+                      : 'bg-gradient-to-br from-slate-900 via-slate-950 to-black border-white/10'
                   }`}
                 >
-                  {judgeResult.isCorrect ? 'Correct' : 'Incorrect'}
-                </span>
-              )}
-            </div>
-            <div className="grid gap-6 md:grid-cols-2 text-left">
-              <div
-                className={`rounded-2xl p-6 border-2 shadow-2xl ${
-                  judgeResult
-                    ? judgeResult.isCorrect
-                      ? 'bg-gradient-to-br from-emerald-900/70 via-emerald-950 to-slate-950 border-emerald-400/60'
-                      : 'bg-gradient-to-br from-rose-900/70 via-rose-950 to-slate-950 border-rose-400/60'
-                    : 'bg-gradient-to-br from-slate-900 via-slate-950 to-black border-white/10'
-                }`}
-              >
-                <p className="text-2xl md:text-3xl font-bold uppercase tracking-wider text-slate-200 mb-3">Correct Word</p>
-                <p className="text-6xl md:text-7xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(255,255,255,0.25)]">
-                  {pendingWord || judgeResult?.actualWord || ''}
-                </p>
-              </div>
-              {judgeResult && (
-                <div className="rounded-2xl p-6 border-2 shadow-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-black border-indigo-400/60">
-                  <p className="text-2xl md:text-3xl font-bold uppercase tracking-wider text-slate-200 mb-3">Spelled Word</p>
-                  <p className="text-6xl md:text-7xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(129,140,248,0.4)]">
-                    {judgeResult.typedWord || ''}
+                  <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold uppercase tracking-wider text-slate-200 mb-3">Correct Word</p>
+                  <p className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(255,255,255,0.25)]">
+                    {pendingWord || judgeResult?.actualWord || ''}
                   </p>
                 </div>
-              )}
+                {judgeResult && (
+                  <div className="rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-black border-indigo-400/60">
+                    <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold uppercase tracking-wider text-slate-200 mb-3">Spelled Word</p>
+                    <p className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(129,140,248,0.4)]">
+                      {judgeResult.typedWord || ''}
+                    </p>
+                  </div>
+                )}
+              </div>
+              <p className="mt-4 sm:mt-6 text-slate-300 text-base sm:text-lg lg:text-xl">Result shared from Judge Console</p>
             </div>
-            <p className="mt-6 text-slate-300 text-lg">Result shared from Judge Console</p>
           </div>
         </div>
       )}
