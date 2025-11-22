@@ -185,6 +185,28 @@ export const ViewPage: React.FC = () => {
           setIsRunning(false);
           wasRunningRef.current = false;
           break;
+        case 'control':
+          // Handle control messages directly (e.g., from ManageScreen)
+          if (message.control?.action === 'end') {
+            console.log('ViewPage: Received control end message');
+            wasRunningRef.current = false;
+            // If we already have a judge result (check both state and ref), don't process 'end' message
+            if (judgeResult || judgeResultRef.current) {
+              console.log('Ignoring control end message - judge result already exists', { judgeResult, ref: judgeResultRef.current });
+              break;
+            }
+            // Clear timers and reset state
+            clearResultTimers();
+            setTimerEnded(false);
+            setIsResultVisible(false);
+            setIsRunning(false);
+            setIsPaused(false);
+            setPendingWord('');
+            setJudgeResult(null);
+            setTimeLeft(60);
+            lastBeepRef.current = -1;
+          }
+          break;
         case 'end':
           wasRunningRef.current = false;
           // If we already have a judge result (check both state and ref), don't process 'end' message

@@ -185,6 +185,21 @@ export const JudgePage: React.FC = () => {
           }
           setStatus('paused');
           break;
+        case 'control':
+          // Handle control messages directly (e.g., from ManageScreen)
+          if (message.control?.action === 'end') {
+            console.log('JudgePage: Received control end message');
+            if (autoSubmitPendingRef.current) {
+              // If auto-submit is pending, submit the result
+              submitResult(message.data?.word, 'auto');
+            } else {
+              // Otherwise, just reset to waiting state
+              setStatus('waiting');
+              setTimeLeft(0);
+            }
+            setAutoSubmitPending(false);
+          }
+          break;
         case 'end': {
           if (autoSubmitPendingRef.current) {
             submitResult(message.data?.word, 'auto');

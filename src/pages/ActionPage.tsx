@@ -177,6 +177,12 @@ export const ActionPage: React.FC = () => {
             });
             break;
           case 'end':
+            // Stop timer interval immediately
+            if (timerIntervalRef.current !== null) {
+              clearInterval(timerIntervalRef.current);
+              timerIntervalRef.current = null;
+            }
+            
             // Get current word before clearing it - use refs to ensure we get the latest value
             const wordToShow = currentWordRef.current || (startedRow !== null && quizDataRef.current[startedRow] ? quizDataRef.current[startedRow].Word : '');
             
