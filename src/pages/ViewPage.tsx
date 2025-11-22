@@ -341,6 +341,13 @@ export const ViewPage: React.FC = () => {
         case 'judge':
           if (message.judgeData) {
             console.log('Received judge result on view page:', message.judgeData);
+            console.log('Typed word received:', {
+              typedWord: message.judgeData.typedWord,
+              type: typeof message.judgeData.typedWord,
+              length: message.judgeData.typedWord?.length,
+              actualWord: message.judgeData.actualWord,
+              isCorrect: message.judgeData.isCorrect
+            });
             // Clear any existing result timers first
             clearResultTimers();
             // Ensure we're in timer mode to display results
@@ -350,6 +357,7 @@ export const ViewPage: React.FC = () => {
             setJudgeResult(message.judgeData);
             judgeResultRef.current = message.judgeData; // Update ref immediately
             console.log('Judge result set (state and ref):', message.judgeData);
+            console.log('Judge result typedWord after setting:', judgeResultRef.current?.typedWord);
             // Stop timer states
             setIsRunning(false);
             setIsPaused(false);
@@ -617,7 +625,7 @@ export const ViewPage: React.FC = () => {
                   <div className="rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-black border-indigo-400/60">
                     <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold uppercase tracking-wider text-slate-200 mb-3">Spelled Word</p>
                     <p className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(129,140,248,0.4)]">
-                      {judgeResult.typedWord || ''}
+                      {judgeResult.typedWord !== undefined && judgeResult.typedWord !== null ? judgeResult.typedWord : '—'}
                     </p>
                   </div>
                 )}

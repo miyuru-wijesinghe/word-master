@@ -49,8 +49,24 @@ export const JudgePage: React.FC = () => {
       return;
     }
 
-    const capturedTyped =
-      trigger === 'manual' ? typedWord.trim() : typedWordRef.current.trim();
+    // For manual submissions, use state as primary source (guaranteed current on button click)
+    // For auto submissions, use ref (state might be cleared by then)
+    const refValue = (typedWordRef.current || '').trim();
+    const stateValue = (typedWord || '').trim();
+    const capturedTyped = trigger === 'manual' 
+      ? (stateValue || refValue)  // State first for manual, ref as fallback
+      : refValue;  // Ref only for auto
+    
+    console.log('Capturing typed word:', {
+      trigger,
+      fromRef: typedWordRef.current,
+      fromState: typedWord,
+      refValue,
+      stateValue,
+      captured: capturedTyped,
+      finalDisplay: capturedTyped || '—'
+    });
+    
     const normalizedActual = normalizeWord(resolvedWord);
     const normalizedTyped = normalizeWord(capturedTyped);
     const isCorrect =
@@ -58,7 +74,9 @@ export const JudgePage: React.FC = () => {
       normalizedTyped.length > 0 &&
       normalizedActual === normalizedTyped;
 
-    const displayTyped = capturedTyped || '—';
+    // Always send the actual typed word value (even if empty), not a fallback
+    // The display will handle showing '—' if needed
+    const displayTyped = capturedTyped; // Send actual value, not fallback
     const signature = `${resolvedWord.toLowerCase()}::${displayTyped.toLowerCase()}::${trigger}`;
 
     if (trigger === 'auto' && signature === lastSubmittedSignatureRef.current) {
@@ -71,12 +89,20 @@ export const JudgePage: React.FC = () => {
       type: 'judge',
       judgeData: {
         actualWord: resolvedWord,
-        typedWord: displayTyped,
+        typedWord: displayTyped, // Send actual typed word
         isCorrect
       }
     };
     
     console.log('Sending judge result:', judgeMessage);
+    console.log('Judge message details:', {
+      actualWord: resolvedWord,
+      typedWord: displayTyped,
+      isCorrect,
+      capturedTyped,
+      stateValue,
+      refValue
+    });
     console.log('BroadcastChannel available:', typeof BroadcastChannel !== 'undefined');
     broadcastManager.send(judgeMessage);
     console.log('Judge result sent via broadcastManager');
@@ -214,7 +240,12 @@ export const JudgePage: React.FC = () => {
             <h2 className="text-xl font-semibold text-slate-800">Spell Capture</h2>
             <textarea
               value={typedWord}
-              onChange={(e) => setTypedWord(e.target.value)}
+              onChange={(e) => {
+                const newValue = e.target.value;
+                setTypedWord(newValue);
+                // Update ref immediately to ensure it's always in sync
+                typedWordRef.current = newValue;
+              }}
               placeholder="Type the student's spelling here..."
               className="w-full h-40 border-2 border-slate-200 rounded-xl p-4 text-lg focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-400 resize-none"
             />
@@ -222,7 +253,8 @@ export const JudgePage: React.FC = () => {
               <button
                 onClick={() => {
                   console.log('Button clicked! currentWord:', currentWord, 'currentWordRef:', currentWordRef.current);
-                  console.log('typedWord:', typedWord);
+                  console.log('typedWord (state):', typedWord);
+                  console.log('typedWord (ref):', typedWordRef.current);
                   submitResult(undefined, 'manual');
                 }}
                 disabled={!currentWord}
