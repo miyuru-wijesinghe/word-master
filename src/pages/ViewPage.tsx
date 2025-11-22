@@ -5,7 +5,7 @@ import type { QuizMessage } from '../utils/broadcast';
 import { soundManager } from '../utils/soundManager';
 
 const RESULT_DELAY_MS = 5000;
-const RESULT_DISPLAY_MS = 15000;
+const RESULT_DISPLAY_MS = 10000;
 
 export const ViewPage: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState(60);
