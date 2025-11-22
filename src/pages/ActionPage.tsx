@@ -444,6 +444,9 @@ export const ActionPage: React.FC = () => {
   // Ref to track last beep time
   const lastBeepRef = useRef<number>(-1);
   
+  // Ref to store interval ID so it can be cleared from within the callback
+  const timerIntervalRef = useRef<number | null>(null);
+  
   // Refs to store current values for timer interval (prevents interval restart on state changes)
   const currentWordRef = useRef(currentWord);
   const currentStudentRef = useRef(currentStudent);
@@ -478,20 +481,54 @@ export const ActionPage: React.FC = () => {
 
   // Timer interval - runs when timer is active
   useEffect(() => {
-    let intervalId: number | null = null;
+    // Clear any existing interval first to prevent duplicates
+    if (timerIntervalRef.current !== null) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
     
     if (isRunning && !isPaused) {
-      intervalId = window.setInterval(() => {
+      timerIntervalRef.current = window.setInterval(() => {
+        // Check if timer was stopped externally BEFORE processing
+        if (!isRunningRef.current || isPausedRef.current) {
+          // Timer was stopped, clear interval immediately
+          if (timerIntervalRef.current !== null) {
+            clearInterval(timerIntervalRef.current);
+            timerIntervalRef.current = null;
+          }
+          return;
+        }
+
         setTimeLeft(prev => {
-          // Check if timer was stopped externally
+          // Double-check state before decrementing
           if (!isRunningRef.current || isPausedRef.current) {
             return prev;
+          }
+
+          // Prevent negative values - safety check
+          if (prev <= 0) {
+            // Timer already ended, stop interval immediately
+            if (timerIntervalRef.current !== null) {
+              clearInterval(timerIntervalRef.current);
+              timerIntervalRef.current = null;
+            }
+            // Update state to stop timer
+            setIsRunning(false);
+            setIsPaused(false);
+            setStartedRow(null);
+            return 0;
           }
 
           const newTime = prev - 1;
           
           if (newTime <= 0) {
-            // Timer ended - update state
+            // Timer ended - stop interval immediately to prevent further decrements
+            if (timerIntervalRef.current !== null) {
+              clearInterval(timerIntervalRef.current);
+              timerIntervalRef.current = null;
+            }
+            
+            // Update state
             setIsRunning(false);
             setIsPaused(false);
             setStartedRow(null);
@@ -554,9 +591,9 @@ export const ActionPage: React.FC = () => {
     }
     
     return () => {
-      if (intervalId !== null) {
-        clearInterval(intervalId);
-        intervalId = null;
+      if (timerIntervalRef.current !== null) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
       }
     };
   }, [isRunning, isPaused]); // Only depend on isRunning and isPaused
