@@ -71,13 +71,25 @@ export const ActionPage: React.FC = () => {
       // Handle judge results - show alert on control panel
       if (message.type === 'judge' && message.judgeData) {
         console.log('Control Panel: Received judge result:', message.judgeData);
+        console.log('Control Panel: Typed word received:', {
+          typedWord: message.judgeData.typedWord,
+          type: typeof message.judgeData.typedWord,
+          length: message.judgeData.typedWord?.length,
+          actualWord: message.judgeData.actualWord,
+          isCorrect: message.judgeData.isCorrect
+        });
+        
+        // Ensure typedWord is always a string
+        const typedWord = String(message.judgeData.typedWord || '');
+        const actualWord = String(message.judgeData.actualWord || '');
+        
         setJudgeResult({
           isCorrect: message.judgeData.isCorrect,
-          actualWord: message.judgeData.actualWord,
-          typedWord: message.judgeData.typedWord
+          actualWord: actualWord,
+          typedWord: typedWord
         });
         setShowJudgeAlert(true);
-        console.log('Control Panel: Alert should be visible now');
+        console.log('Control Panel: Alert should be visible now, typedWord:', typedWord);
         
         // Clear previous timeout if exists
         if (judgeAlertTimeoutRef.current) {

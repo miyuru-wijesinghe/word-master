@@ -49,13 +49,23 @@ export const JudgePage: React.FC = () => {
       return;
     }
 
-    // For manual submissions, use state as primary source (guaranteed current on button click)
+    // For manual submissions, capture from both state and ref to ensure we get the value
+    // Use whichever has content (prefer state, but use ref if state is empty)
     // For auto submissions, use ref (state might be cleared by then)
     const refValue = (typedWordRef.current || '').trim();
     const stateValue = (typedWord || '').trim();
-    const capturedTyped = trigger === 'manual' 
-      ? (stateValue || refValue)  // State first for manual, ref as fallback
-      : refValue;  // Ref only for auto
+    
+    // For manual: prefer state, but if state is empty and ref has value, use ref
+    // This handles cases where state update hasn't propagated yet
+    let capturedTyped: string;
+    if (trigger === 'manual') {
+      // Use state if it has content, otherwise use ref
+      capturedTyped = stateValue || refValue;
+      // If both are empty, that's okay - we'll send empty string
+    } else {
+      // For auto, only use ref
+      capturedTyped = refValue;
+    }
     
     console.log('Capturing typed word:', {
       trigger,
@@ -64,7 +74,7 @@ export const JudgePage: React.FC = () => {
       refValue,
       stateValue,
       captured: capturedTyped,
-      finalDisplay: capturedTyped || '—'
+      capturedLength: capturedTyped.length
     });
     
     const normalizedActual = normalizeWord(resolvedWord);
@@ -76,36 +86,52 @@ export const JudgePage: React.FC = () => {
 
     // Always send the actual typed word value (even if empty), not a fallback
     // The display will handle showing '—' if needed
-    const displayTyped = capturedTyped; // Send actual value, not fallback
+    // Ensure it's always a string, never undefined/null
+    const displayTyped = (capturedTyped === undefined || capturedTyped === null) 
+      ? '' 
+      : String(capturedTyped);
+    
     const signature = `${resolvedWord.toLowerCase()}::${displayTyped.toLowerCase()}::${trigger}`;
 
     if (trigger === 'auto' && signature === lastSubmittedSignatureRef.current) {
+      console.log('Skipping duplicate auto submission');
       return;
     }
     lastSubmittedSignatureRef.current = signature;
 
     // Always send judge result - this is the main message that displays on view screen
+    // displayTyped is already guaranteed to be a string from above
     const judgeMessage: QuizMessage = {
       type: 'judge',
       judgeData: {
         actualWord: resolvedWord,
-        typedWord: displayTyped, // Send actual typed word
+        typedWord: displayTyped, // Already a string, guaranteed above
         isCorrect
       }
     };
     
-    console.log('Sending judge result:', judgeMessage);
+    console.log('Sending judge result:', JSON.stringify(judgeMessage, null, 2));
     console.log('Judge message details:', {
       actualWord: resolvedWord,
       typedWord: displayTyped,
+      typedWordType: typeof displayTyped,
+      typedWordLength: displayTyped.length,
       isCorrect,
       capturedTyped,
       stateValue,
       refValue
     });
     console.log('BroadcastChannel available:', typeof BroadcastChannel !== 'undefined');
-    broadcastManager.send(judgeMessage);
-    console.log('Judge result sent via broadcastManager');
+    
+    // Send message - ensure it's sent before clearing state
+    try {
+      broadcastManager.send(judgeMessage);
+      console.log('Judge result sent via broadcastManager successfully');
+    } catch (error) {
+      console.error('Error sending judge result:', error);
+      // Don't clear state if send failed - allow retry
+      return;
+    }
 
     // For manual submissions, send control 'end' to stop timer
     // But delay it slightly to ensure judge message is processed first

@@ -153,14 +153,18 @@ export const ViewPage: React.FC = () => {
             setIsRunning(message.data.isRunning);
             setIsPaused(!message.data.isRunning);
             setTimerEnded(false);
-            // Only clear result-related states if we're not showing a result
-            // This prevents clearing judge result when timer updates come in
-            if (!isResultVisible && !judgeResultRef.current) {
+            // Only clear result-related states if we're not showing a result AND no judge result exists
+            // Check both state and ref to prevent race conditions
+            // This prevents clearing judge result when timer updates come in during the delay period
+            if (!isResultVisible && !judgeResult && !judgeResultRef.current) {
               setPendingWord('');
               setIsResultVisible(false);
               setJudgeResult(null);
             }
-            clearResultTimers();
+            // Don't clear timers if we have a pending judge result (even if not visible yet)
+            if (!judgeResult && !judgeResultRef.current) {
+              clearResultTimers();
+            }
             wasRunningRef.current = isNowRunning;
           }
           // If message.data.isRunning is false or missing, ignore it (row selection)
