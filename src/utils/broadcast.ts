@@ -75,7 +75,7 @@ class BroadcastManager {
     console.log('BroadcastManager.send called with:', message);
     // Send via BroadcastChannel for same-device sync (fast, immediate)
     try {
-      this.channel.postMessage(message);
+    this.channel.postMessage(message);
       console.log('Message posted to BroadcastChannel');
     } catch (error) {
       console.error('Error posting to BroadcastChannel:', error);

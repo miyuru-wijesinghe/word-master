@@ -38,7 +38,7 @@ export const Timer: React.FC<TimerProps> = ({
               newTime === 10
             ) {
               if (lastBeepRef.current !== newTime) {
-                broadcastManager.sendSpeech(newTime, true);
+              broadcastManager.sendSpeech(newTime, true);
                 lastBeepRef.current = newTime;
               }
             } else if (newTime <= 10 && newTime > 0 && lastBeepRef.current !== newTime) {

@@ -514,7 +514,7 @@ export const ManageScreen: React.FC = () => {
                     : 'bg-red-600 hover:bg-red-700 text-white hover:scale-110 shadow-xl hover:shadow-2xl'
                 }`}
               >
-                ⏹️ End
+                ⏹️ Clear
               </button>
             </div>
           </div>
