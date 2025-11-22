@@ -122,6 +122,7 @@ export const ActionPage: React.FC = () => {
                 setCurrentWord(selectedData.Word);
                 setStartedRow(lastSelectedIndex);
                 setTimeLeft(duration);
+                timeLeftRef.current = duration; // Update ref immediately
                 setIsRunning(true);
                 setIsPaused(false);
                 lastBeepRef.current = -1; // Reset beep tracking when timer starts
@@ -146,36 +147,31 @@ export const ActionPage: React.FC = () => {
             });
             break;
           case 'pause':
-            setIsPaused(prevPaused => {
-              const newPaused = !prevPaused;
-              // Update isRunning state immediately
-              setIsRunning(!newPaused);
-              
-              // Use refs to get latest values for broadcast message
-              const currentWordValue = currentWordRef.current;
-              const currentStudentValue = currentStudentRef.current;
-              
-              // Get timeLeft from state - we'll use a functional update to ensure we have the latest value
-              setTimeLeft(prevTime => {
-                const pauseMessage: QuizMessage = {
-                  type: newPaused ? 'pause' : 'update',
-                  data: {
-                    student: currentStudentValue,
-                    word: currentWordValue,
-                    timeLeft: prevTime,
-                    isRunning: !newPaused
-                  },
-                  selectedEntries: selectedRowsRef.current.map(i => ({
-                    word: quizDataRef.current[i].Word,
-                    team: quizDataRef.current[i].Team
-                  }))
-                };
-                broadcastManager.send(pauseMessage);
-                return prevTime;
-              });
-              
-              return newPaused;
-            });
+            // Toggle pause state - avoid nested setState
+            const newPaused = !isPausedRef.current;
+            setIsPaused(newPaused);
+            setIsRunning(!newPaused);
+            
+            // Use refs to get latest values for broadcast message
+            const currentWordValue = currentWordRef.current;
+            const currentStudentValue = currentStudentRef.current;
+            const currentTimeLeft = timeLeftRef.current;
+            
+            // Send pause message immediately
+            const pauseMessage: QuizMessage = {
+              type: newPaused ? 'pause' : 'update',
+              data: {
+                student: currentStudentValue,
+                word: currentWordValue,
+                timeLeft: currentTimeLeft,
+                isRunning: !newPaused
+              },
+              selectedEntries: selectedRowsRef.current.map(i => ({
+                word: quizDataRef.current[i].Word,
+                team: quizDataRef.current[i].Team
+              }))
+            };
+            broadcastManager.send(pauseMessage);
             break;
           case 'end':
             // Stop timer interval immediately
@@ -191,6 +187,7 @@ export const ActionPage: React.FC = () => {
             setIsRunning(false);
             setIsPaused(false);
             setTimeLeft(60);
+            timeLeftRef.current = 60; // Update ref immediately
             setCurrentStudent('');
             setCurrentWord('');
             currentWordRef.current = ''; // Clear ref value too
@@ -461,6 +458,7 @@ export const ActionPage: React.FC = () => {
   const quizDataRef = useRef(quizData);
   const isRunningRef = useRef(isRunning);
   const isPausedRef = useRef(isPaused);
+  const timeLeftRef = useRef(timeLeft);
 
   useEffect(() => {
     currentWordRef.current = currentWord;
@@ -485,6 +483,10 @@ export const ActionPage: React.FC = () => {
   useEffect(() => {
     isPausedRef.current = isPaused;
   }, [isPaused]);
+
+  useEffect(() => {
+    timeLeftRef.current = timeLeft;
+  }, [timeLeft]);
 
   // Timer interval - runs when timer is active
   useEffect(() => {
@@ -523,10 +525,12 @@ export const ActionPage: React.FC = () => {
             setIsRunning(false);
             setIsPaused(false);
             setStartedRow(null);
+            timeLeftRef.current = 0;
             return 0;
           }
 
           const newTime = prev - 1;
+          timeLeftRef.current = newTime; // Update ref immediately
           
           if (newTime <= 0) {
             // Timer ended - stop interval immediately to prevent further decrements
@@ -539,6 +543,7 @@ export const ActionPage: React.FC = () => {
             setIsRunning(false);
             setIsPaused(false);
             setStartedRow(null);
+            timeLeftRef.current = 0;
             
             // Broadcast end message with word included
             const endMessage: QuizMessage = {
