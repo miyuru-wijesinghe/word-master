@@ -610,7 +610,7 @@ export const ViewPage: React.FC = () => {
           </div>
         ) : (
           <div className="text-center">
-            <div className="text-8xl mb-8">🎯</div>
+            {/* <div className="text-8xl mb-8">🎯</div> */}
             <h2 className="text-6xl font-bold text-slate-400 mb-4">🐝Next Word Loading... Get Ready to Spell!</h2>
           </div>
         )}
@@ -648,7 +648,7 @@ export const ViewPage: React.FC = () => {
               </div>
               <div className="grid gap-4 sm:gap-6 lg:gap-8 md:grid-cols-2 text-left">
                 <div
-                  className={`rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl ${
+                  className={`rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl min-w-0 ${
                     judgeResult
                       ? judgeResult.isCorrect
                         ? 'bg-gradient-to-br from-emerald-900/70 via-emerald-950 to-slate-950 border-emerald-400/60'
@@ -657,14 +657,14 @@ export const ViewPage: React.FC = () => {
                   }`}
                 >
                   <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold uppercase tracking-wider text-slate-200 mb-3">Correct Word</p>
-                  <p className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(255,255,255,0.25)]">
+                  <p className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(255,255,255,0.25)] leading-tight" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', hyphens: 'auto' }}>
                     {pendingWord || judgeResult?.actualWord || ''}
                   </p>
                 </div>
                 {judgeResult && (
-                  <div className="rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-black border-indigo-400/60">
+                  <div className="rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-black border-indigo-400/60 min-w-0">
                     <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold uppercase tracking-wider text-slate-200 mb-3">Spelled Word</p>
-                    <p className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(129,140,248,0.4)]">
+                    <p className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(129,140,248,0.4)] leading-tight" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', hyphens: 'auto' }}>
                       {judgeResult.typedWord !== undefined && judgeResult.typedWord !== null ? judgeResult.typedWord : '—'}
                     </p>
                   </div>
