@@ -219,6 +219,14 @@ export const ActionPage: React.FC = () => {
             console.log('ActionPage: Received control end message, stopping timer');
             // Reset judge result flag when manually ending
             judgeResultReceivedRef.current = false;
+            // Hide judge alert when timer is ended manually (e.g., from Clear button)
+            setShowJudgeAlert(false);
+            setJudgeResult(null);
+            // Clear any pending timeout
+            if (judgeAlertTimeoutRef.current) {
+              clearTimeout(judgeAlertTimeoutRef.current);
+              judgeAlertTimeoutRef.current = null;
+            }
             // Stop timer interval immediately - CRITICAL to prevent timer from continuing
             if (timerIntervalRef.current !== null) {
               console.log('ActionPage: Clearing timer interval');
