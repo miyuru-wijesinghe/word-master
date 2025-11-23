@@ -26,6 +26,8 @@ export const ViewPage: React.FC = () => {
   const mediaTypeRef = useRef<'video' | 'image'>('video');
   const wasRunningRef = useRef<boolean>(false);
   const judgeResultRef = useRef<QuizMessage['judgeData'] | null>(null);
+  // Track if we're expecting a judge result - prevents control 'end' from clearing it
+  const pendingJudgeResultRef = useRef<boolean>(false);
 
   const clearResultTimers = () => {
     if (resultDelayTimeoutRef.current !== null) {
@@ -69,6 +71,8 @@ export const ViewPage: React.FC = () => {
         setPendingWord('');
         if (!preserveJudgeResult) {
           setJudgeResult(null);
+          judgeResultRef.current = null;
+          pendingJudgeResultRef.current = false; // Reset pending flag
         }
         setTimerEnded(false);
         resultHideTimeoutRef.current = null;
@@ -89,6 +93,8 @@ export const ViewPage: React.FC = () => {
           setPendingWord('');
           if (!preserveJudgeResult) {
             setJudgeResult(null);
+            judgeResultRef.current = null;
+            pendingJudgeResultRef.current = false; // Reset pending flag
           }
           setTimerEnded(false);
           resultHideTimeoutRef.current = null;
@@ -170,6 +176,8 @@ export const ViewPage: React.FC = () => {
               setPendingWord('');
               setIsResultVisible(false);
               setJudgeResult(null);
+              judgeResultRef.current = null;
+              pendingJudgeResultRef.current = false;
             }
             // Don't clear timers if we have a pending judge result (even if not visible yet)
             if (!judgeResult && !judgeResultRef.current) {
@@ -214,9 +222,14 @@ export const ViewPage: React.FC = () => {
           } else if (message.control?.action === 'end') {
             console.log('ViewPage: Received control end message');
             wasRunningRef.current = false;
-            // If we already have a judge result (check both state and ref), don't process 'end' message
-            if (judgeResult || judgeResultRef.current) {
-              console.log('Ignoring control end message - judge result already exists', { judgeResult, ref: judgeResultRef.current });
+            // CRITICAL: Check pending flag, state, and ref to handle out-of-order messages
+            // If we're expecting a judge result or already have one, don't process 'end' message
+            if (pendingJudgeResultRef.current || judgeResult || judgeResultRef.current) {
+              console.log('ViewPage: Ignoring control end message - judge result exists or pending', { 
+                pending: pendingJudgeResultRef.current,
+                judgeResult, 
+                ref: judgeResultRef.current 
+              });
               break;
             }
             // Clear timers and reset state
@@ -227,17 +240,21 @@ export const ViewPage: React.FC = () => {
             setIsPaused(false);
             setPendingWord('');
             setJudgeResult(null);
+            judgeResultRef.current = null;
+            pendingJudgeResultRef.current = false;
             setTimeLeft(60);
             lastBeepRef.current = -1;
           }
           break;
         case 'end':
           wasRunningRef.current = false;
-          // CRITICAL: If we already have a judge result (check both state and ref), don't process 'end' message
+          // CRITICAL: Check pending flag, state, and ref to handle out-of-order messages
+          // If we're expecting a judge result or already have one, don't process 'end' message
           // The judge result should take precedence - DON'T clear timers if judge result exists
           // This prevents race condition where timer ends naturally after judge sends result
-          if (judgeResult || judgeResultRef.current) {
-            console.log('ViewPage: Ignoring end message - judge result already exists, preserving result timers', { 
+          if (pendingJudgeResultRef.current || judgeResult || judgeResultRef.current) {
+            console.log('ViewPage: Ignoring end message - judge result exists or pending, preserving result timers', { 
+              pending: pendingJudgeResultRef.current,
               judgeResult, 
               ref: judgeResultRef.current,
               isResultVisible,
@@ -265,6 +282,8 @@ export const ViewPage: React.FC = () => {
             setIsPaused(false);
             setPendingWord('');
             setJudgeResult(null);
+            judgeResultRef.current = null;
+            pendingJudgeResultRef.current = false;
             setTimeLeft(60);
           }
           lastBeepRef.current = -1;
@@ -284,6 +303,8 @@ export const ViewPage: React.FC = () => {
           setMediaType('video');
           setIsImageVisible(false);
           setJudgeResult(null);
+          judgeResultRef.current = null;
+          pendingJudgeResultRef.current = false;
           wasRunningRef.current = false;
           lastBeepRef.current = -1;
           break;
@@ -315,6 +336,8 @@ export const ViewPage: React.FC = () => {
                   setIsPaused(false);
                   setTimeLeft(60);
                   setJudgeResult(null);
+                  judgeResultRef.current = null;
+                  pendingJudgeResultRef.current = false;
                   setVideoUrl('');
                   setMediaType('video');
                 }
@@ -330,6 +353,8 @@ export const ViewPage: React.FC = () => {
                 // Keep word cleared when switching to video
                 setPendingWord('');
                 setJudgeResult(null);
+                judgeResultRef.current = null;
+                pendingJudgeResultRef.current = false;
                 if (incomingMediaType === 'image') {
                   setIsImageVisible(false);
                 }
@@ -404,10 +429,13 @@ export const ViewPage: React.FC = () => {
               actualWord: message.judgeData.actualWord,
               isCorrect: message.judgeData.isCorrect
             });
+            // CRITICAL: Set pending flag FIRST to protect against out-of-order messages
+            pendingJudgeResultRef.current = true;
             // CRITICAL: Set judge result ref FIRST (synchronously) before any state updates
             // This ensures 'end' messages that arrive later will see the ref and skip processing
             judgeResultRef.current = message.judgeData;
             console.log('ViewPage: Judge result ref set immediately:', judgeResultRef.current);
+            console.log('ViewPage: Pending judge result flag set to true');
             
             // Clear any existing result timers first
             clearResultTimers();

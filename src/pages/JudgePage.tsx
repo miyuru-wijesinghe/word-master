@@ -142,16 +142,18 @@ export const JudgePage: React.FC = () => {
     }
 
     // For manual submissions, send control 'end' to stop timer
-    // But delay it slightly to ensure judge message is processed first
+    // CRITICAL: Delay must be long enough to ensure judge message is processed first
+    // Increased to 500ms to account for Firebase network latency and message ordering
     if (trigger === 'manual') {
       setTimeout(() => {
+        console.log('JudgePage: Sending control end message after delay');
         broadcastManager.send({
           type: 'control',
           control: {
             action: 'end'
           }
         });
-      }, 200);
+      }, 500); // Increased from 200ms to 500ms for better reliability
     }
 
     // Clear state after sending messages
