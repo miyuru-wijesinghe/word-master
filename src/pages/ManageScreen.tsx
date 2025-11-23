@@ -256,34 +256,36 @@ export const ManageScreen: React.FC = () => {
     broadcastManager.send(message);
   };
 
-  const handleEnd = () => {
-    console.log('ManageScreen: Clear button pressed');
-    // Send clear message to reset view screen to default state
-    const clearMessage: QuizMessage = {
-      type: 'clear'
-    };
-    try {
-      broadcastManager.send(clearMessage);
-      console.log('ManageScreen: Clear message sent');
-    } catch (error) {
-      console.error('ManageScreen: Error sending clear message:', error);
-    }
-    // Also send control end message to stop timer
-    const endMessage: QuizMessage = {
-      type: 'control',
-      control: {
-        action: 'end'
-      }
-    };
-    try {
-      broadcastManager.send(endMessage);
-      console.log('ManageScreen: Control end message sent');
-    } catch (error) {
-      console.error('ManageScreen: Error sending control end message:', error);
-    }
-    // Clear the end screen when Clear button is pressed
-    resetAfterEnd();
-  };
+  // handleEnd function removed - Clear button is commented out
+  // If needed in the future, uncomment both the function and the button
+  // const handleEnd = () => {
+  //   console.log('ManageScreen: Clear button pressed');
+  //   // Send clear message to reset view screen to default state
+  //   const clearMessage: QuizMessage = {
+  //     type: 'clear'
+  //   };
+  //   try {
+  //     broadcastManager.send(clearMessage);
+  //     console.log('ManageScreen: Clear message sent');
+  //   } catch (error) {
+  //     console.error('ManageScreen: Error sending clear message:', error);
+  //   }
+  //   // Also send control end message to stop timer
+  //   const endMessage: QuizMessage = {
+  //     type: 'control',
+  //     control: {
+  //       action: 'end'
+  //     }
+  //   };
+  //   try {
+  //     broadcastManager.send(endMessage);
+  //     console.log('ManageScreen: Control end message sent');
+  //   } catch (error) {
+  //     console.error('ManageScreen: Error sending control end message:', error);
+  //   }
+  //   // Clear the end screen when Clear button is pressed
+  //   resetAfterEnd();
+  // };
 
 
   const formatTime = (seconds: number) => {
