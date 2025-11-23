@@ -40,9 +40,19 @@ export const ViewPage: React.FC = () => {
 
   const startResultWindow = (wordToShow?: string, immediate: boolean = false, preserveJudgeResult: boolean = false) => {
     clearResultTimers();
-    if (wordToShow) {
-      setPendingWord(wordToShow);
+    
+    // CRITICAL: Only set timerEnded if there's actually a word to show
+    // This prevents "Timer Ended" screen from appearing when there's no word
+    if (!wordToShow || wordToShow.trim() === '') {
+      console.log('ViewPage: startResultWindow called without word, resetting timerEnded');
+      setTimerEnded(false);
+      setIsResultVisible(false);
+      setIsRunning(false);
+      setIsPaused(false);
+      return;
     }
+    
+    setPendingWord(wordToShow);
     setTimerEnded(true);
     setIsRunning(false);
     setIsPaused(false);
@@ -242,13 +252,13 @@ export const ViewPage: React.FC = () => {
             soundManager.ensureAudioContext();
             soundManager.playTimerEndBeep();
             // Set all states together in one batch to prevent flash
-            // timerEnded must be set at the same time as isRunning(false) to avoid showing default screen
             setIsRunning(false);
             setIsPaused(false);
-            setTimerEnded(true);
             setIsResultVisible(false);
+            // startResultWindow will set timerEnded(true) if word is valid
             startResultWindow(wordToShow);
           } else {
+            // No word - reset everything
             setTimerEnded(false);
             setIsResultVisible(false);
             setIsRunning(false);
