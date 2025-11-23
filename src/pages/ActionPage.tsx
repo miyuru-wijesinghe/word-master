@@ -95,17 +95,25 @@ export const ActionPage: React.FC = () => {
         setIsPaused(false);
         timeLeftRef.current = 0;
         
-        // Ensure typedWord is always a string
-        const typedWord = String(message.judgeData.typedWord || '');
+        // Ensure typedWord is always a string (even if empty - empty string is valid)
+        // Handle all possible cases: undefined, null, empty string, or actual value
+        const typedWord = (message.judgeData.typedWord !== undefined && message.judgeData.typedWord !== null)
+          ? String(message.judgeData.typedWord)
+          : '';
         const actualWord = String(message.judgeData.actualWord || '');
         
-        setJudgeResult({
-          isCorrect: message.judgeData.isCorrect,
+        // CRITICAL: Always set judgeResult and show alert, even if typedWord is empty
+        // The alert should show regardless of whether a word was typed or not
+        const resultData = {
+          isCorrect: message.judgeData.isCorrect || false,
           actualWord: actualWord,
-          typedWord: typedWord
-        });
+          typedWord: typedWord // Can be empty string - that's valid
+        };
+        
+        console.log('Control Panel: Setting judge result:', resultData);
+        setJudgeResult(resultData);
         setShowJudgeAlert(true);
-        console.log('Control Panel: Alert should be visible now, typedWord:', typedWord);
+        console.log('Control Panel: Alert should be visible now, typedWord:', typedWord, 'isEmpty:', typedWord === '');
         
         // Clear previous timeout if exists
         if (judgeAlertTimeoutRef.current) {
@@ -768,7 +776,7 @@ export const ActionPage: React.FC = () => {
                   Spelled Word
                 </p>
                 <p className={`text-2xl font-bold ${judgeResult.isCorrect ? 'text-green-50' : 'text-red-50'}`}>
-                  {judgeResult.typedWord}
+                  {judgeResult.typedWord && judgeResult.typedWord.trim() !== '' ? judgeResult.typedWord : '—'}
                 </p>
               </div>
             </div>
