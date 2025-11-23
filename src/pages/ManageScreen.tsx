@@ -29,6 +29,8 @@ export const ManageScreen: React.FC = () => {
   const prevIsRunningRef = useRef<boolean>(false);
   const prevIsPausedRef = useRef<boolean>(false);
   const prevWordRef = useRef<string>('');
+  // Track if page has been initialized - prevents processing stale messages on mount
+  const isInitializedRef = useRef<boolean>(false);
 
   const resetAfterEnd = (options?: { keepWord?: boolean }) => {
     setTimerEnded(false);
@@ -46,6 +48,15 @@ export const ManageScreen: React.FC = () => {
   }, [isRunning, isPaused]);
 
   useEffect(() => {
+    // Reset initialization flag on mount
+    isInitializedRef.current = false;
+    
+    // Mark as initialized after a delay to avoid processing stale messages on mount
+    const initTimeout = setTimeout(() => {
+      isInitializedRef.current = true;
+      console.log('ManageScreen: Initialized, will now process messages');
+    }, 500);
+    
     // Listen for broadcast messages
     const unsubscribe = broadcastManager.listen((message: QuizMessage) => {
       if (message.selectedEntries) {
@@ -57,7 +68,12 @@ export const ManageScreen: React.FC = () => {
         const { timeLeft: incomingTime, isRunning: incomingRunning, word } = message.data;
         const isSelectionUpdate = message.type === 'update' && !incomingRunning && incomingTime === 0;
 
-        if (isSelectionUpdate) {
+        // CRITICAL: Ignore word updates from stale messages before initialization
+        // This prevents showing words like 'Astral' on initial load
+        if (!isInitializedRef.current && word) {
+          console.log('ManageScreen: Ignoring word from stale message before initialization:', word);
+          // Don't set currentWord, but still process other updates
+        } else if (isSelectionUpdate) {
           if (word && word !== prevWordRef.current) {
             setCurrentWord(word);
             prevWordRef.current = word;
@@ -92,8 +108,8 @@ export const ManageScreen: React.FC = () => {
           prevIsRunningRef.current = incomingRunning;
         }
         
-        // Only update word if it actually changed
-        if (word && word !== prevWordRef.current) {
+        // Only update word if it actually changed AND page is initialized
+        if (word && word !== prevWordRef.current && isInitializedRef.current) {
           setCurrentWord(word);
           prevWordRef.current = word;
         }
@@ -171,6 +187,7 @@ export const ManageScreen: React.FC = () => {
     });
 
     return () => {
+      clearTimeout(initTimeout);
       unsubscribe();
     };
   }, []);
@@ -241,15 +258,25 @@ export const ManageScreen: React.FC = () => {
 
   const handleEnd = () => {
     console.log('ManageScreen: Clear button pressed');
-    // Always send control end message, even if timer appears stopped
-    const message: QuizMessage = {
+    // Send clear message to reset view screen to default state
+    const clearMessage: QuizMessage = {
+      type: 'clear'
+    };
+    try {
+      broadcastManager.send(clearMessage);
+      console.log('ManageScreen: Clear message sent');
+    } catch (error) {
+      console.error('ManageScreen: Error sending clear message:', error);
+    }
+    // Also send control end message to stop timer
+    const endMessage: QuizMessage = {
       type: 'control',
       control: {
         action: 'end'
       }
     };
     try {
-      broadcastManager.send(message);
+      broadcastManager.send(endMessage);
       console.log('ManageScreen: Control end message sent');
     } catch (error) {
       console.error('ManageScreen: Error sending control end message:', error);
