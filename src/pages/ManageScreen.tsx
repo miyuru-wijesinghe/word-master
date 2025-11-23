@@ -193,14 +193,21 @@ export const ManageScreen: React.FC = () => {
   };
 
   const handleEnd = () => {
+    console.log('ManageScreen: Clear button pressed');
+    // Always send control end message, even if timer appears stopped
     const message: QuizMessage = {
       type: 'control',
       control: {
         action: 'end'
       }
     };
-    broadcastManager.send(message);
-    // Clear the end screen when End button is pressed
+    try {
+      broadcastManager.send(message);
+      console.log('ManageScreen: Control end message sent');
+    } catch (error) {
+      console.error('ManageScreen: Error sending control end message:', error);
+    }
+    // Clear the end screen when Clear button is pressed
     resetAfterEnd();
   };
 
@@ -507,12 +514,7 @@ export const ManageScreen: React.FC = () => {
               
               <button
                 onClick={handleEnd}
-                disabled={!isRunning && !isPaused && !hasStarted && !timerEnded}
-                className={`px-10 py-5 rounded-xl font-bold text-lg transition-all duration-200 transform ${
-                  !isRunning && !isPaused && !hasStarted && !timerEnded
-                    ? 'bg-gray-400 cursor-not-allowed text-white'
-                    : 'bg-red-600 hover:bg-red-700 text-white hover:scale-110 shadow-xl hover:shadow-2xl'
-                }`}
+                className="px-10 py-5 rounded-xl font-bold text-lg transition-all duration-200 transform bg-red-600 hover:bg-red-700 text-white hover:scale-110 shadow-xl hover:shadow-2xl"
               >
                 ⏹️ Clear
               </button>

@@ -68,7 +68,7 @@ export const ActionPage: React.FC = () => {
   // Listen for control messages from ManageScreen and judge results
   useEffect(() => {
     const unsubscribe = broadcastManager.listen((message: QuizMessage) => {
-      // Handle judge results - show alert on control panel
+      // Handle judge results - show alert on control panel and STOP TIMER IMMEDIATELY
       if (message.type === 'judge' && message.judgeData) {
         console.log('Control Panel: Received judge result:', message.judgeData);
         console.log('Control Panel: Typed word received:', {
@@ -78,6 +78,18 @@ export const ActionPage: React.FC = () => {
           actualWord: message.judgeData.actualWord,
           isCorrect: message.judgeData.isCorrect
         });
+        
+        // STOP TIMER IMMEDIATELY when judge sends result
+        if (timerIntervalRef.current !== null) {
+          console.log('Control Panel: Stopping timer interval on judge result');
+          clearInterval(timerIntervalRef.current);
+          timerIntervalRef.current = null;
+        }
+        
+        // Stop timer states immediately
+        setIsRunning(false);
+        setIsPaused(false);
+        timeLeftRef.current = 0;
         
         // Ensure typedWord is always a string
         const typedWord = String(message.judgeData.typedWord || '');
@@ -174,11 +186,17 @@ export const ActionPage: React.FC = () => {
             broadcastManager.send(pauseMessage);
             break;
           case 'end':
-            // Stop timer interval immediately
+            console.log('ActionPage: Received control end message, stopping timer');
+            // Stop timer interval immediately - CRITICAL to prevent timer from continuing
             if (timerIntervalRef.current !== null) {
+              console.log('ActionPage: Clearing timer interval');
               clearInterval(timerIntervalRef.current);
               timerIntervalRef.current = null;
             }
+            
+            // Also ensure refs are updated to prevent interval from continuing
+            isRunningRef.current = false;
+            isPausedRef.current = false;
             
             // Get current word before clearing it - use refs to ensure we get the latest value
             const wordToShow = currentWordRef.current || (startedRow !== null && quizDataRef.current[startedRow] ? quizDataRef.current[startedRow].Word : '');
@@ -208,6 +226,7 @@ export const ActionPage: React.FC = () => {
               }))
             };
             broadcastManager.send(endMessage);
+            console.log('ActionPage: Timer stopped and end message broadcasted');
             break;
           case 'addTime':
             if (addSeconds && (isRunning || isPaused)) {
