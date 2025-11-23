@@ -586,12 +586,12 @@ export const ManageScreen: React.FC = () => {
                 {isPaused ? '▶️ Resume' : '⏸️ Pause'}
               </button>
               
-              <button
+              {/* <button
                 onClick={handleEnd}
                 className="px-10 py-5 rounded-xl font-bold text-lg transition-all duration-200 transform bg-red-600 hover:bg-red-700 text-white hover:scale-110 shadow-xl hover:shadow-2xl"
               >
                 ⏹️ Clear
-              </button>
+              </button> */}
             </div>
           </div>
           
