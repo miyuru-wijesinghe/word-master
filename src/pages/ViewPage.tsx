@@ -56,23 +56,23 @@ export const ViewPage: React.FC = () => {
       return;
     }
     
-    setPendingWord(wordToShow);
+      setPendingWord(wordToShow);
     setTimerEnded(true);
     setIsRunning(false);
     setIsPaused(false);
-    
+
     if (immediate) {
       // Show immediately - no delay
       setIsResultVisible(true);
       console.log('Result window shown immediately, preserveJudgeResult:', preserveJudgeResult);
-      
+
       resultHideTimeoutRef.current = window.setTimeout(() => {
         soundManager.ensureAudioContext();
         soundManager.playWordClearBeep();
         setIsResultVisible(false);
         setPendingWord('');
         if (!preserveJudgeResult) {
-          setJudgeResult(null);
+        setJudgeResult(null);
           judgeResultRef.current = null;
           pendingJudgeResultRef.current = false; // Reset pending flag
         }
@@ -98,10 +98,10 @@ export const ViewPage: React.FC = () => {
             judgeResultRef.current = null;
             pendingJudgeResultRef.current = false; // Reset pending flag
           }
-          setTimerEnded(false);
-          resultHideTimeoutRef.current = null;
-        }, RESULT_DISPLAY_MS);
-      }, RESULT_DELAY_MS);
+        setTimerEnded(false);
+        resultHideTimeoutRef.current = null;
+      }, RESULT_DISPLAY_MS);
+    }, RESULT_DELAY_MS);
     }
   };
 
@@ -131,8 +131,9 @@ export const ViewPage: React.FC = () => {
 
   // CRITICAL: Reset all state on mount to prevent stale values from showing "Timer Ended"
   // This MUST run synchronously before any other effects
+  // Also clears any cached state that might persist
   useEffect(() => {
-    console.log('ViewPage: Component mounted, resetting all state');
+    console.log('ViewPage: Component mounted, resetting all state and clearing cache');
     // Explicitly reset all timer-related state on mount - use functional updates to ensure they happen
     setTimerEnded(() => false);
     setIsRunning(() => false);
@@ -141,14 +142,18 @@ export const ViewPage: React.FC = () => {
     setPendingWord(() => '');
     setJudgeResult(() => null);
     setTimeLeft(() => 60);
+    setDisplayMode('timer'); // Reset display mode
+    setVideoUrl(''); // Clear video URL
+    setIsImageVisible(false); // Reset image visibility
     // Reset all refs synchronously
     judgeResultRef.current = null;
     pendingJudgeResultRef.current = false;
     wasRunningRef.current = false;
     lastBeepRef.current = -1;
+    mediaTypeRef.current = 'video'; // Reset media type ref
     // Clear any existing timers
     clearResultTimers();
-    console.log('ViewPage: All state reset on mount');
+    console.log('ViewPage: All state and cache reset on mount');
   }, []); // Run only on mount
 
   // Play beep sounds when Latest Result becomes visible
@@ -186,13 +191,16 @@ export const ViewPage: React.FC = () => {
     const cleanup = broadcastManager.listen((message: QuizMessage) => {
       console.log('ViewPage: Received message:', message.type, message);
       
-      // CRITICAL: Ignore ALL 'end' and 'control: end' messages that arrive before initialization
-      // Also ignore if there's no pendingWord - prevents showing "Timer Ended" without a word
+      // CRITICAL: Ignore ALL messages that arrive before initialization to prevent automatic triggers
+      // This prevents stale messages from causing unwanted displays on the view screen
+      if (!isInitializedRef.current) {
+        console.log('ViewPage: Ignoring message received before initialization:', message.type);
+        return;
+      }
+      
+      // CRITICAL: Ignore ALL 'end' and 'control: end' messages if there's no pendingWord
+      // This prevents showing "Timer Ended" without a word
       if ((message.type === 'end' || (message.type === 'control' && message.control?.action === 'end'))) {
-        if (!isInitializedRef.current) {
-          console.log('ViewPage: Ignoring end message received before initialization');
-          return;
-        }
         // Additional check: don't process end messages if there's no pending word
         if (!pendingWord && !message.data?.word) {
           console.log('ViewPage: Ignoring end message - no word to display');
@@ -202,6 +210,27 @@ export const ViewPage: React.FC = () => {
       
       switch (message.type) {
         case 'update':
+          // CRITICAL: Only ignore update messages if we have a judge result AND timer is not starting
+          // Allow update messages when timer is starting (isRunning transitions from false to true)
+          // This ensures counter appears when restart is pressed
+          const isTimerStarting = message.data?.isRunning && !wasRunningRef.current;
+          if ((judgeResult || judgeResultRef.current || pendingJudgeResultRef.current) && !isTimerStarting) {
+            console.log('ViewPage: Ignoring update message - judge result exists or pending and timer not starting');
+            break;
+          }
+          
+          // If timer is starting, clear judge result to allow counter to appear
+          if (isTimerStarting) {
+            console.log('ViewPage: Timer starting, clearing judge result to show counter');
+            setJudgeResult(null);
+            judgeResultRef.current = null;
+            pendingJudgeResultRef.current = false;
+            setTimerEnded(false);
+            setIsResultVisible(false);
+            setPendingWord('');
+            clearResultTimers();
+          }
+          
           // Only update ViewPage if timer is actually running (isRunning === true)
           // Don't update on row selection - that's only for ManageScreen
           if (message.data && message.data.isRunning) {
@@ -223,15 +252,15 @@ export const ViewPage: React.FC = () => {
             // Check both state and ref to prevent race conditions
             // This prevents clearing judge result when timer updates come in during the delay period
             if (!isResultVisible && !judgeResult && !judgeResultRef.current) {
-              setPendingWord('');
-              setIsResultVisible(false);
-              setJudgeResult(null);
+            setPendingWord('');
+            setIsResultVisible(false);
+            setJudgeResult(null);
               judgeResultRef.current = null;
               pendingJudgeResultRef.current = false;
             }
             // Don't clear timers if we have a pending judge result (even if not visible yet)
             if (!judgeResult && !judgeResultRef.current) {
-              clearResultTimers();
+            clearResultTimers();
             }
             wasRunningRef.current = isNowRunning;
           }
@@ -255,7 +284,26 @@ export const ViewPage: React.FC = () => {
           break;
         case 'control':
           // Handle control messages directly (e.g., from ManageScreen)
-          if (message.control?.action === 'pause') {
+          if (message.control?.action === 'start') {
+            console.log('ViewPage: Received control start message', { duration: message.control.duration });
+            // When timer starts, clear any judge results and reset timer states
+            // This ensures the counter appears properly when restart is pressed
+            setJudgeResult(null);
+            judgeResultRef.current = null;
+            pendingJudgeResultRef.current = false;
+            setTimerEnded(false);
+            setIsResultVisible(false);
+            setPendingWord('');
+            clearResultTimers();
+            // Timer will be started by the update message from ActionPage
+            // But we prepare the state here to ensure counter appears
+            const duration = message.control.duration || 60;
+            setTimeLeft(duration);
+            setIsRunning(false); // Will be set to true by update message
+            setIsPaused(false);
+            wasRunningRef.current = false;
+            console.log('ViewPage: Prepared for timer start, waiting for update message');
+          } else if (message.control?.action === 'pause') {
             console.log('ViewPage: Received control pause message', { isRunning, isPaused });
             // Toggle pause state - only if timer is actually running or paused
             if (isRunning || isPaused) {
@@ -366,8 +414,12 @@ export const ViewPage: React.FC = () => {
               setMediaType(incomingMediaType);
             }
             // Update display mode if provided - this should happen first
+            // CRITICAL: Always update displayMode when provided, even if it seems the same
+            // This ensures proper mode switching after timer ends
             if (message.videoData.displayMode) {
               const newMode = message.videoData.displayMode;
+              
+              // Always set display mode, even if it's the same (handles stuck states)
               setDisplayMode(newMode);
               
               // When switching to timer mode, clear timer-related states if no timer is running
@@ -394,7 +446,9 @@ export const ViewPage: React.FC = () => {
               }
               
               // When switching to video mode, ensure timer states are cleared
+              // This is especially important when switching from timer mode after word ends
               if (newMode === 'video') {
+                console.log('ViewPage: Switching to video mode, clearing timer states');
                 clearResultTimers();
                 setIsRunning(false);
                 setIsPaused(false);
@@ -432,32 +486,85 @@ export const ViewPage: React.FC = () => {
               }
               break;
             }
-
+            
             // Control video playback - use setTimeout to ensure DOM is updated
             setTimeout(() => {
               const video = videoRef.current;
-              if (!video) return;
+              if (!video) {
+                console.warn('ViewPage: Video element not found');
+                return;
+              }
               
               if (message.videoData?.action === 'play') {
-                // Ensure video source is set
+                // CRITICAL: Use URL from message first (always current), then fallback to state
+                // This ensures we have the URL even if state hasn't updated yet
                 const urlToPlay = message.videoData.url || videoUrl;
-                if (urlToPlay && video.src !== urlToPlay) {
+                
+                if (!urlToPlay) {
+                  console.warn('ViewPage: No video URL available for play action');
+                  return;
+                }
+                
+                console.log('ViewPage: Attempting to play video:', urlToPlay);
+                
+                // Ensure video source is set - always set it even if it seems the same
+                // This handles cases where the video element was reset or not properly initialized
+                if (video.src !== urlToPlay) {
+                  console.log('ViewPage: Setting video source:', urlToPlay);
                   video.src = urlToPlay;
                   video.load();
                 }
+                
+                // Function to attempt playing the video
+                const attemptPlay = () => {
+                  video.play()
+                    .then(() => {
+                      console.log('ViewPage: Video playing successfully');
+                    })
+                    .catch((error) => {
+                      console.error('ViewPage: Error playing video:', error);
+                      // Retry once after a short delay if video wasn't ready
+                      if (error.name === 'NotAllowedError' || error.name === 'NotReadyStateError') {
+                        setTimeout(() => {
+                          video.play().catch(err => console.error('ViewPage: Retry play failed:', err));
+                        }, 100);
+                      }
+                    });
+                };
+                
                 // Wait for video to be ready before playing
                 if (video.readyState >= 2) {
-                  video.play().catch(console.error);
+                  // Video is ready, play immediately
+                  attemptPlay();
                 } else {
+                  // Video not ready, wait for it to load
+                  console.log('ViewPage: Video not ready, waiting for loadeddata event');
                   const playWhenReady = () => {
-                    video.play().catch(console.error);
+                    console.log('ViewPage: Video loaded, attempting to play');
+                    attemptPlay();
                   };
+                  // Remove any existing listeners to avoid duplicates
+                  video.removeEventListener('loadeddata', playWhenReady);
                   video.addEventListener('loadeddata', playWhenReady, { once: true });
-                  video.load();
+                  
+                  // Also try canplay event as fallback
+                  const playWhenCanPlay = () => {
+                    console.log('ViewPage: Video can play, attempting to play');
+                    attemptPlay();
+                  };
+                  video.removeEventListener('canplay', playWhenCanPlay);
+                  video.addEventListener('canplay', playWhenCanPlay, { once: true });
+                  
+                  // Ensure video is loading
+                  if (video.readyState === 0) {
+                    video.load();
+                  }
                 }
               } else if (message.videoData?.action === 'pause') {
+                console.log('ViewPage: Pausing video');
                 video.pause();
               } else if (message.videoData?.action === 'stop') {
+                console.log('ViewPage: Stopping video');
                 video.pause();
                 video.currentTime = 0;
                 if (video.src) {
@@ -495,14 +602,16 @@ export const ViewPage: React.FC = () => {
             setJudgeResult(message.judgeData);
             console.log('ViewPage: Judge result state set:', message.judgeData);
             console.log('ViewPage: Judge result typedWord after setting:', judgeResultRef.current?.typedWord);
-            // Stop timer states
+            // Stop timer states IMMEDIATELY - this stops the counter from updating
             setIsRunning(false);
             setIsPaused(false);
+            setTimeLeft(0); // Reset timer to 0 to stop display
             setTimerEnded(true);
+            wasRunningRef.current = false; // Update ref to prevent timer from restarting
             // Use startResultWindow with preserveJudgeResult=true to keep judge result visible
             // This shows the result after delay, same as timer end, but preserves judge data
             startResultWindow(message.judgeData.actualWord, false, true);
-            console.log('ViewPage: Judge result processed, result will show after', RESULT_DELAY_MS, 'ms delay');
+            console.log('ViewPage: Judge result processed, timer stopped, result will show after', RESULT_DELAY_MS, 'ms delay');
             // Sounds will be played when result becomes visible (see useEffect below)
           }
           break;
@@ -660,27 +769,27 @@ export const ViewPage: React.FC = () => {
                 </div>
               )
             ) : (
-              <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
-                <video
-                  ref={videoRef}
-                  src={videoUrl}
-                  className="w-full h-full object-contain"
-                  playsInline
-                  key={videoUrl}
-                  tabIndex={-1}
-                >
-                  Your browser does not support the video tag.
-                </video>
-              </div>
+          <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
+            <video
+              ref={videoRef}
+              src={videoUrl}
+              className="w-full h-full object-contain"
+              playsInline
+              key={videoUrl}
+              tabIndex={-1}
+            >
+              Your browser does not support the video tag.
+            </video>
+          </div>
             )
           ) : (
-            <div className="text-center">
-              <div className="text-8xl mb-8">🎬</div>
+          <div className="text-center">
+            <div className="text-8xl mb-8">🎬</div>
               <h2 className="text-6xl font-bold text-slate-400 mb-4">Waiting for Media</h2>
-              <p className="text-3xl text-slate-500">
+            <p className="text-3xl text-slate-500">
                 Select a video or image in Manage Screen
-              </p>
-            </div>
+            </p>
+          </div>
           )
         ) : displayMode === 'timer' && timerEnded && !isResultVisible && pendingWord ? (
           /* Show waiting message during 5 second delay after timer ends */
@@ -719,58 +828,58 @@ export const ViewPage: React.FC = () => {
       {displayMode === 'timer' && isResultVisible && (
         <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 pb-8 lg:pb-10 overflow-x-hidden">
           <div className="w-full max-w-7xl mx-auto">
-            <div
+          <div
               className={`w-full rounded-3xl border-2 p-4 sm:p-6 lg:p-8 text-center ${
-                judgeResult
-                  ? judgeResult.isCorrect
-                    ? 'bg-green-900/40 border-green-500 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
-                    : 'bg-red-900/40 border-red-500 shadow-[0_0_30px_rgba(248,113,113,0.3)]'
-                  : 'bg-slate-900/40 border-white/10'
-              }`}
-            >
+              judgeResult
+                ? judgeResult.isCorrect
+                  ? 'bg-green-900/40 border-green-500 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
+                  : 'bg-red-900/40 border-red-500 shadow-[0_0_30px_rgba(248,113,113,0.3)]'
+                : 'bg-slate-900/40 border-white/10'
+            }`}
+          >
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4 lg:mb-6">
-                <div className="text-left">
+              <div className="text-left">
                   <h3 className="text-2xl sm:text-3xl lg:text-4xl font-bold">Latest Result</h3>
-                  {judgeResult && (
-                    <p className={`text-xl sm:text-2xl lg:text-3xl font-semibold mt-2 ${judgeResult.isCorrect ? 'text-green-300' : 'text-red-300'}`}>
-                      {judgeResult.isCorrect ? 'Your word is correct!' : 'Your word is incorrect.'}
-                    </p>
-                  )}
-                </div>
                 {judgeResult && (
-                  <span
-                    className={`px-4 sm:px-6 py-2 rounded-full text-lg sm:text-xl lg:text-2xl font-semibold whitespace-nowrap ${
-                      judgeResult.isCorrect ? 'bg-green-500 text-slate-900' : 'bg-red-500 text-white'
-                    }`}
-                  >
-                    {judgeResult.isCorrect ? 'Correct' : 'Incorrect'}
-                  </span>
+                    <p className={`text-xl sm:text-2xl lg:text-3xl font-semibold mt-2 ${judgeResult.isCorrect ? 'text-green-300' : 'text-red-300'}`}>
+                    {judgeResult.isCorrect ? 'Your word is correct!' : 'Your word is incorrect.'}
+                  </p>
                 )}
               </div>
-              <div className="grid gap-4 sm:gap-6 lg:gap-8 md:grid-cols-2 text-left">
-                <div
-                  className={`rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl min-w-0 ${
-                    judgeResult
-                      ? judgeResult.isCorrect
-                        ? 'bg-gradient-to-br from-emerald-900/70 via-emerald-950 to-slate-950 border-emerald-400/60'
-                        : 'bg-gradient-to-br from-rose-900/70 via-rose-950 to-slate-950 border-rose-400/60'
-                      : 'bg-gradient-to-br from-slate-900 via-slate-950 to-black border-white/10'
+              {judgeResult && (
+                <span
+                    className={`px-4 sm:px-6 py-2 rounded-full text-lg sm:text-xl lg:text-2xl font-semibold whitespace-nowrap ${
+                    judgeResult.isCorrect ? 'bg-green-500 text-slate-900' : 'bg-red-500 text-white'
                   }`}
                 >
+                  {judgeResult.isCorrect ? 'Correct' : 'Incorrect'}
+                </span>
+              )}
+            </div>
+              <div className="grid gap-4 sm:gap-6 lg:gap-8 md:grid-cols-2 text-left">
+              <div
+                  className={`rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl min-w-0 ${
+                  judgeResult
+                    ? judgeResult.isCorrect
+                      ? 'bg-gradient-to-br from-emerald-900/70 via-emerald-950 to-slate-950 border-emerald-400/60'
+                      : 'bg-gradient-to-br from-rose-900/70 via-rose-950 to-slate-950 border-rose-400/60'
+                    : 'bg-gradient-to-br from-slate-900 via-slate-950 to-black border-white/10'
+                }`}
+              >
                   <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold uppercase tracking-wider text-slate-200 mb-3">Correct Word</p>
                   <p className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(255,255,255,0.25)] leading-tight" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', hyphens: 'auto' }}>
-                    {pendingWord || judgeResult?.actualWord || ''}
-                  </p>
-                </div>
-                {judgeResult && (
+                  {pendingWord || judgeResult?.actualWord || ''}
+                </p>
+              </div>
+              {judgeResult && (
                   <div className="rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-black border-indigo-400/60 min-w-0">
                     <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold uppercase tracking-wider text-slate-200 mb-3">Spelled Word</p>
                     <p className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(129,140,248,0.4)] leading-tight" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', hyphens: 'auto' }}>
                       {judgeResult.typedWord !== undefined && judgeResult.typedWord !== null ? judgeResult.typedWord : '—'}
-                    </p>
-                  </div>
-                )}
-              </div>
+                  </p>
+                </div>
+              )}
+            </div>
               <p className="mt-4 sm:mt-6 text-slate-300 text-base sm:text-lg lg:text-xl">Result shared from Judge Console</p>
             </div>
           </div>

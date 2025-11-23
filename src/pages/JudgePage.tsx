@@ -110,12 +110,12 @@ export const JudgePage: React.FC = () => {
     // Always send judge result - this is the main message that displays on view screen
     // displayTyped is already guaranteed to be a string from above
     const judgeMessage: QuizMessage = {
-      type: 'judge',
-      judgeData: {
-        actualWord: resolvedWord,
+        type: 'judge',
+        judgeData: {
+          actualWord: resolvedWord,
         typedWord: displayTyped, // Already a string, guaranteed above
-        isCorrect
-      }
+          isCorrect
+        }
     };
     
     console.log('Sending judge result:', JSON.stringify(judgeMessage, null, 2));
@@ -154,13 +154,13 @@ export const JudgePage: React.FC = () => {
           }
         });
       }, 500); // Increased from 200ms to 500ms for better reliability
-    }
+      }
 
     // Clear state after sending messages
-    setStatus('waiting');
-    setTimeLeft(0);
-    setCurrentWord('');
-    setTypedWord('');
+      setStatus('waiting');
+      setTimeLeft(0);
+      setCurrentWord('');
+      setTypedWord('');
 
     setAutoSubmitPending(false);
   };
@@ -217,8 +217,8 @@ export const JudgePage: React.FC = () => {
           if (autoSubmitPendingRef.current) {
             submitResult(message.data?.word, 'auto');
           } else {
-            setStatus('waiting');
-            setTimeLeft(0);
+          setStatus('waiting');
+          setTimeLeft(0);
           }
           setAutoSubmitPending(false);
           break;

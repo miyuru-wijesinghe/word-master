@@ -48,13 +48,19 @@ export const ManageScreen: React.FC = () => {
   }, [isRunning, isPaused]);
 
   useEffect(() => {
-    // Reset initialization flag on mount
+    // Reset initialization flag on mount - clears any cached state
     isInitializedRef.current = false;
+    
+    // Reset all prev refs to clear cached values
+    prevTimeLeftRef.current = 0;
+    prevIsRunningRef.current = false;
+    prevIsPausedRef.current = false;
+    prevWordRef.current = '';
     
     // Mark as initialized after a delay to avoid processing stale messages on mount
     const initTimeout = setTimeout(() => {
       isInitializedRef.current = true;
-      console.log('ManageScreen: Initialized, will now process messages');
+      console.log('ManageScreen: Initialized, cache cleared, will now process messages');
     }, 500);
     
     // Listen for broadcast messages
@@ -98,13 +104,13 @@ export const ManageScreen: React.FC = () => {
         
         // Only update timeLeft if it actually changed - prevents unnecessary re-renders
         if (incomingTime !== prevTimeLeftRef.current) {
-          setTimeLeft(incomingTime);
+        setTimeLeft(incomingTime);
           prevTimeLeftRef.current = incomingTime;
         }
         
         // Only update isRunning if it actually changed
         if (incomingRunning !== prevIsRunningRef.current) {
-          setIsRunning(incomingRunning);
+        setIsRunning(incomingRunning);
           prevIsRunningRef.current = incomingRunning;
         }
         
@@ -116,7 +122,7 @@ export const ManageScreen: React.FC = () => {
         
         if (incomingRunning) {
           if (!prevIsPausedRef.current) {
-            setIsPaused(false);
+          setIsPaused(false);
             prevIsPausedRef.current = false;
           }
           setTimerEnded(false);
@@ -124,7 +130,7 @@ export const ManageScreen: React.FC = () => {
         } else if (incomingTime === 0) {
           // Not running and no countdown active
           if (prevIsPausedRef.current) {
-            setIsPaused(false);
+          setIsPaused(false);
             prevIsPausedRef.current = false;
           }
           setHasStarted(false);
@@ -137,11 +143,11 @@ export const ManageScreen: React.FC = () => {
       // Handle pause
       if (message.type === 'pause') {
         if (!prevIsPausedRef.current) {
-          setIsPaused(true);
+        setIsPaused(true);
           prevIsPausedRef.current = true;
         }
         if (prevIsRunningRef.current) {
-          setIsRunning(false);
+        setIsRunning(false);
           prevIsRunningRef.current = false;
         }
       }
@@ -149,22 +155,22 @@ export const ManageScreen: React.FC = () => {
       // Handle end - differentiate between natural timer end and End button press
       if (message.type === 'end') {
         if (prevIsRunningRef.current) {
-          setIsRunning(false);
+        setIsRunning(false);
           prevIsRunningRef.current = false;
         }
         if (prevIsPausedRef.current) {
-          setIsPaused(false);
+        setIsPaused(false);
           prevIsPausedRef.current = false;
         }
         if (prevTimeLeftRef.current !== 0) {
-          setTimeLeft(0);
+        setTimeLeft(0);
           prevTimeLeftRef.current = 0;
         }
         // If message has word data, timer ended naturally - show end screen
         if (message.data && message.data.word) {
           setTimerEnded(true);
           if (message.data.word !== prevWordRef.current) {
-            setCurrentWord(message.data.word);
+          setCurrentWord(message.data.word);
             prevWordRef.current = message.data.word;
           }
           setHasStarted(false);
@@ -209,6 +215,14 @@ export const ManageScreen: React.FC = () => {
       alert('Please select a time duration (30s or 2m) before starting');
       return;
     }
+    
+    // CRITICAL: Reset all timer-related state before starting
+    // This ensures the timer starts fresh from the beginning, even after it has ended
+    setTimerEnded(false);
+    setIsPaused(false);
+    setIsRunning(false); // Will be set to true by the control message
+    setHasStarted(false); // Will be set to true by the control message
+    setTimeLeft(duration);
     
     // Broadcast mode change to timer
     broadcastManager.send({
@@ -437,13 +451,25 @@ export const ManageScreen: React.FC = () => {
                 <div className="flex flex-wrap justify-center gap-4">
                   <button
                     onClick={() => {
+                      // CRITICAL: Ensure we're in video mode before playing
+                      // This is especially important when in timer mode after a word ends
+                      if (displayMode !== 'video') {
+                        setDisplayMode('video');
+                      }
+                      
                       if (!isVideoPlaying) {
                         setIsVideoPlaying(true);
                         setHasVideoPlayed(true);
+                        // Ensure we have a video URL before sending play
+                        const urlToSend = videoObjectUrl || videoUrl;
+                        if (!urlToSend) {
+                          console.warn('ManageScreen: No video URL available for play');
+                          return;
+                        }
                         broadcastManager.send({
                           type: 'video',
                           videoData: { 
-                            url: videoObjectUrl || videoUrl, 
+                            url: urlToSend, 
                             isPlaying: true, 
                             action: 'play',
                             displayMode: 'video',
@@ -573,7 +599,7 @@ export const ManageScreen: React.FC = () => {
                     : 'bg-green-600 hover:bg-green-700 text-white hover:scale-110 shadow-xl hover:shadow-2xl'
                 }`}
               >
-                ▶️ Play
+                {timerEnded ? '🔄 Restart' : '▶️ Play'}
               </button>
               
               <button
