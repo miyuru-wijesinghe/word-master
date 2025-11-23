@@ -24,6 +24,11 @@ export const ManageScreen: React.FC = () => {
   const [displayMode, setDisplayMode] = useState<'timer' | 'video'>('timer'); // Track which mode is active
   const [mediaType, setMediaType] = useState<'video' | 'image' | null>(null);
   const timerActiveRef = useRef(false);
+  // Refs to track previous values and prevent unnecessary state updates
+  const prevTimeLeftRef = useRef<number>(60);
+  const prevIsRunningRef = useRef<boolean>(false);
+  const prevIsPausedRef = useRef<boolean>(false);
+  const prevWordRef = useRef<string>('');
 
   const resetAfterEnd = (options?: { keepWord?: boolean }) => {
     setTimerEnded(false);
@@ -53,8 +58,9 @@ export const ManageScreen: React.FC = () => {
         const isSelectionUpdate = message.type === 'update' && !incomingRunning && incomingTime === 0;
 
         if (isSelectionUpdate) {
-          if (word) {
+          if (word && word !== prevWordRef.current) {
             setCurrentWord(word);
+            prevWordRef.current = word;
           }
           
           if (!timerActiveRef.current) {
@@ -63,6 +69,9 @@ export const ManageScreen: React.FC = () => {
             setHasStarted(false);
             setTimerEnded(false);
             setTimeLeft(0);
+            prevTimeLeftRef.current = 0;
+            prevIsRunningRef.current = false;
+            prevIsPausedRef.current = false;
           }
           
           // Selection updates shouldn't override an active timer
@@ -71,20 +80,37 @@ export const ManageScreen: React.FC = () => {
           }
         }
         
-        setTimeLeft(incomingTime);
-        setIsRunning(incomingRunning);
+        // Only update timeLeft if it actually changed - prevents unnecessary re-renders
+        if (incomingTime !== prevTimeLeftRef.current) {
+          setTimeLeft(incomingTime);
+          prevTimeLeftRef.current = incomingTime;
+        }
         
-        if (word) {
+        // Only update isRunning if it actually changed
+        if (incomingRunning !== prevIsRunningRef.current) {
+          setIsRunning(incomingRunning);
+          prevIsRunningRef.current = incomingRunning;
+        }
+        
+        // Only update word if it actually changed
+        if (word && word !== prevWordRef.current) {
           setCurrentWord(word);
+          prevWordRef.current = word;
         }
         
         if (incomingRunning) {
-          setIsPaused(false);
+          if (!prevIsPausedRef.current) {
+            setIsPaused(false);
+            prevIsPausedRef.current = false;
+          }
           setTimerEnded(false);
           setHasStarted(true);
         } else if (incomingTime === 0) {
           // Not running and no countdown active
-          setIsPaused(false);
+          if (prevIsPausedRef.current) {
+            setIsPaused(false);
+            prevIsPausedRef.current = false;
+          }
           setHasStarted(false);
           if (!word) {
             setTimerEnded(false);
@@ -94,24 +120,45 @@ export const ManageScreen: React.FC = () => {
       
       // Handle pause
       if (message.type === 'pause') {
-        setIsPaused(true);
-        setIsRunning(false);
+        if (!prevIsPausedRef.current) {
+          setIsPaused(true);
+          prevIsPausedRef.current = true;
+        }
+        if (prevIsRunningRef.current) {
+          setIsRunning(false);
+          prevIsRunningRef.current = false;
+        }
       }
       
       // Handle end - differentiate between natural timer end and End button press
       if (message.type === 'end') {
-        setIsRunning(false);
-        setIsPaused(false);
-        setTimeLeft(0);
-        // If message has word data, timer ended naturally - show end screen
+        if (prevIsRunningRef.current) {
+          setIsRunning(false);
+          prevIsRunningRef.current = false;
+        }
+        if (prevIsPausedRef.current) {
+          setIsPaused(false);
+          prevIsPausedRef.current = false;
+        }
+        if (prevTimeLeftRef.current !== 0) {
+          setTimeLeft(0);
+          prevTimeLeftRef.current = 0;
+        }
         // If message has word data, timer ended naturally - show end screen
         if (message.data && message.data.word) {
           setTimerEnded(true);
-          setCurrentWord(message.data.word);
+          if (message.data.word !== prevWordRef.current) {
+            setCurrentWord(message.data.word);
+            prevWordRef.current = message.data.word;
+          }
           setHasStarted(false);
         } else {
           // End was triggered - clear everything
           resetAfterEnd();
+          prevTimeLeftRef.current = 0;
+          prevIsRunningRef.current = false;
+          prevIsPausedRef.current = false;
+          prevWordRef.current = '';
         }
       }
 
