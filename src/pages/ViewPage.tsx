@@ -223,10 +223,16 @@ export const ViewPage: React.FC = () => {
           break;
         case 'end':
           wasRunningRef.current = false;
-          // If we already have a judge result (check both state and ref), don't process 'end' message
+          // CRITICAL: If we already have a judge result (check both state and ref), don't process 'end' message
           // The judge result should take precedence - DON'T clear timers if judge result exists
+          // This prevents race condition where timer ends naturally after judge sends result
           if (judgeResult || judgeResultRef.current) {
-            console.log('Ignoring end message - judge result already exists, preserving result timers', { judgeResult, ref: judgeResultRef.current });
+            console.log('ViewPage: Ignoring end message - judge result already exists, preserving result timers', { 
+              judgeResult, 
+              ref: judgeResultRef.current,
+              isResultVisible,
+              pendingWord
+            });
             break;
           }
           // Only clear timers if we don't have a judge result
@@ -380,24 +386,27 @@ export const ViewPage: React.FC = () => {
           break;
         case 'judge':
           if (message.judgeData) {
-            console.log('Received judge result on view page:', message.judgeData);
-            console.log('Typed word received:', {
+            console.log('ViewPage: Received judge result:', message.judgeData);
+            console.log('ViewPage: Typed word received:', {
               typedWord: message.judgeData.typedWord,
               type: typeof message.judgeData.typedWord,
               length: message.judgeData.typedWord?.length,
               actualWord: message.judgeData.actualWord,
               isCorrect: message.judgeData.isCorrect
             });
+            // CRITICAL: Set judge result ref FIRST (synchronously) before any state updates
+            // This ensures 'end' messages that arrive later will see the ref and skip processing
+            judgeResultRef.current = message.judgeData;
+            console.log('ViewPage: Judge result ref set immediately:', judgeResultRef.current);
+            
             // Clear any existing result timers first
             clearResultTimers();
             // Ensure we're in timer mode to display results
             setDisplayMode('timer');
-            // Set judge result FIRST (both state and ref) so it's available when result window shows
-            // This prevents 'end' messages from clearing it
+            // Set judge result state (ref already set above)
             setJudgeResult(message.judgeData);
-            judgeResultRef.current = message.judgeData; // Update ref immediately
-            console.log('Judge result set (state and ref):', message.judgeData);
-            console.log('Judge result typedWord after setting:', judgeResultRef.current?.typedWord);
+            console.log('ViewPage: Judge result state set:', message.judgeData);
+            console.log('ViewPage: Judge result typedWord after setting:', judgeResultRef.current?.typedWord);
             // Stop timer states
             setIsRunning(false);
             setIsPaused(false);
@@ -405,7 +414,7 @@ export const ViewPage: React.FC = () => {
             // Use startResultWindow with preserveJudgeResult=true to keep judge result visible
             // This shows the result after delay, same as timer end, but preserves judge data
             startResultWindow(message.judgeData.actualWord, false, true);
-            console.log('Judge result processed, result will show after', RESULT_DELAY_MS, 'ms delay');
+            console.log('ViewPage: Judge result processed, result will show after', RESULT_DELAY_MS, 'ms delay');
             // Sounds will be played when result becomes visible (see useEffect below)
           }
           break;

@@ -79,6 +79,10 @@ export const ActionPage: React.FC = () => {
           isCorrect: message.judgeData.isCorrect
         });
         
+        // Mark that judge result was received - prevents timer from sending 'end' message
+        judgeResultReceivedRef.current = true;
+        console.log('Control Panel: Marked judge result received, will prevent timer end message');
+        
         // STOP TIMER IMMEDIATELY when judge sends result
         if (timerIntervalRef.current !== null) {
           console.log('Control Panel: Stopping timer interval on judge result');
@@ -120,6 +124,8 @@ export const ActionPage: React.FC = () => {
         
         switch (action) {
           case 'start':
+            // Reset judge result flag when starting new timer
+            judgeResultReceivedRef.current = false;
             // Use functional update to get latest selectedRows
             setSelectedRows(currentSelected => {
               if (currentSelected.length > 0) {
@@ -187,6 +193,8 @@ export const ActionPage: React.FC = () => {
             break;
           case 'end':
             console.log('ActionPage: Received control end message, stopping timer');
+            // Reset judge result flag when manually ending
+            judgeResultReceivedRef.current = false;
             // Stop timer interval immediately - CRITICAL to prevent timer from continuing
             if (timerIntervalRef.current !== null) {
               console.log('ActionPage: Clearing timer interval');
@@ -470,6 +478,9 @@ export const ActionPage: React.FC = () => {
   // Ref to store interval ID so it can be cleared from within the callback
   const timerIntervalRef = useRef<number | null>(null);
   
+  // Ref to track if judge result was received - prevents sending 'end' message when judge sends result
+  const judgeResultReceivedRef = useRef<boolean>(false);
+  
   // Refs to store current values for timer interval (prevents interval restart on state changes)
   const currentWordRef = useRef(currentWord);
   const currentStudentRef = useRef(currentStudent);
@@ -564,7 +575,15 @@ export const ActionPage: React.FC = () => {
             setStartedRow(null);
             timeLeftRef.current = 0;
             
-            // Broadcast end message with word included
+            // CRITICAL: Don't send 'end' message if judge result was already received
+            // This prevents race condition where timer ends naturally after judge sends result
+            if (judgeResultReceivedRef.current) {
+              console.log('ActionPage: Timer ended but judge result already received, skipping end message');
+              judgeResultReceivedRef.current = false; // Reset for next round
+              return 0;
+            }
+            
+            // Broadcast end message with word included (only if no judge result)
             const endMessage: QuizMessage = {
               type: 'end',
               data: {
