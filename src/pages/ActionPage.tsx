@@ -127,6 +127,22 @@ export const ActionPage: React.FC = () => {
         }, 8000);
       }
       
+      // Handle clear message - hide judge alert and reset judge result
+      if (message.type === 'clear') {
+        console.log('ActionPage: Received clear message, hiding judge alert');
+        // Clear judge alert immediately
+        setShowJudgeAlert(false);
+        setJudgeResult(null);
+        // Clear any pending timeout
+        if (judgeAlertTimeoutRef.current) {
+          clearTimeout(judgeAlertTimeoutRef.current);
+          judgeAlertTimeoutRef.current = null;
+        }
+        // Reset judge result flag
+        judgeResultReceivedRef.current = false;
+        console.log('ActionPage: Judge alert cleared');
+      }
+      
       if (message.type === 'control' && message.control) {
         const { action, addSeconds } = message.control;
         
