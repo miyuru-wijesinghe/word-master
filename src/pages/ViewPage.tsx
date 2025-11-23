@@ -130,17 +130,18 @@ export const ViewPage: React.FC = () => {
   }, [judgeResult]);
 
   // CRITICAL: Reset all state on mount to prevent stale values from showing "Timer Ended"
+  // This MUST run synchronously before any other effects
   useEffect(() => {
     console.log('ViewPage: Component mounted, resetting all state');
-    // Explicitly reset all timer-related state on mount
-    setTimerEnded(false);
-    setIsRunning(false);
-    setIsPaused(false);
-    setIsResultVisible(false);
-    setPendingWord('');
-    setJudgeResult(null);
-    setTimeLeft(60);
-    // Reset all refs
+    // Explicitly reset all timer-related state on mount - use functional updates to ensure they happen
+    setTimerEnded(() => false);
+    setIsRunning(() => false);
+    setIsPaused(() => false);
+    setIsResultVisible(() => false);
+    setPendingWord(() => '');
+    setJudgeResult(() => null);
+    setTimeLeft(() => 60);
+    // Reset all refs synchronously
     judgeResultRef.current = null;
     pendingJudgeResultRef.current = false;
     wasRunningRef.current = false;
@@ -172,21 +173,31 @@ export const ViewPage: React.FC = () => {
   useEffect(() => {
     console.log('ViewPage: Setting up broadcast listener');
     
+    // CRITICAL: Reset initialization flag on mount
+    isInitializedRef.current = false;
+    
     // Mark as initialized after a delay to avoid processing stale messages on mount
     // Increased delay to ensure state reset completes first
     const initTimeout = setTimeout(() => {
       isInitializedRef.current = true;
       console.log('ViewPage: Initialized, will now process messages');
-    }, 500); // Increased from 100ms to 500ms for better reliability
+    }, 1000); // Increased to 1000ms for maximum reliability
     
     const cleanup = broadcastManager.listen((message: QuizMessage) => {
       console.log('ViewPage: Received message:', message.type, message);
       
-      // CRITICAL: Ignore 'end' messages that arrive before initialization
-      // This prevents stale messages from Firebase/BroadcastChannel from showing "Timer Ended" on page load
-      if ((message.type === 'end' || (message.type === 'control' && message.control?.action === 'end')) && !isInitializedRef.current) {
-        console.log('ViewPage: Ignoring end message received before initialization');
-        return;
+      // CRITICAL: Ignore ALL 'end' and 'control: end' messages that arrive before initialization
+      // Also ignore if there's no pendingWord - prevents showing "Timer Ended" without a word
+      if ((message.type === 'end' || (message.type === 'control' && message.control?.action === 'end'))) {
+        if (!isInitializedRef.current) {
+          console.log('ViewPage: Ignoring end message received before initialization');
+          return;
+        }
+        // Additional check: don't process end messages if there's no pending word
+        if (!pendingWord && !message.data?.word) {
+          console.log('ViewPage: Ignoring end message - no word to display');
+          return;
+        }
       }
       
       switch (message.type) {
@@ -671,8 +682,9 @@ export const ViewPage: React.FC = () => {
               </p>
             </div>
           )
-        ) : displayMode === 'timer' && timerEnded && !isResultVisible ? (
+        ) : displayMode === 'timer' && timerEnded && !isResultVisible && pendingWord ? (
           /* Show waiting message during 5 second delay after timer ends */
+          /* CRITICAL: Only show if pendingWord exists - prevents showing on initial load */
           <div className="text-center">
             <div className="text-8xl mb-8">⏳</div>
             <h2 className="text-6xl font-bold text-slate-400 mb-4">Timer Ended</h2>
