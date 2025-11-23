@@ -28,6 +28,8 @@ export const ViewPage: React.FC = () => {
   const judgeResultRef = useRef<QuizMessage['judgeData'] | null>(null);
   // Track if we're expecting a judge result - prevents control 'end' from clearing it
   const pendingJudgeResultRef = useRef<boolean>(false);
+  // Track if page has been initialized - prevents processing stale messages on mount
+  const isInitializedRef = useRef<boolean>(false);
 
   const clearResultTimers = () => {
     if (resultDelayTimeoutRef.current !== null) {
@@ -148,8 +150,23 @@ export const ViewPage: React.FC = () => {
 
   useEffect(() => {
     console.log('ViewPage: Setting up broadcast listener');
+    
+    // Mark as initialized after a short delay to avoid processing stale messages on mount
+    const initTimeout = setTimeout(() => {
+      isInitializedRef.current = true;
+      console.log('ViewPage: Initialized, will now process messages');
+    }, 100);
+    
     const cleanup = broadcastManager.listen((message: QuizMessage) => {
       console.log('ViewPage: Received message:', message.type, message);
+      
+      // CRITICAL: Ignore 'end' messages that arrive before initialization
+      // This prevents stale messages from Firebase/BroadcastChannel from showing "Timer Ended" on page load
+      if ((message.type === 'end' || (message.type === 'control' && message.control?.action === 'end')) && !isInitializedRef.current) {
+        console.log('ViewPage: Ignoring end message received before initialization');
+        return;
+      }
+      
       switch (message.type) {
         case 'update':
           // Only update ViewPage if timer is actually running (isRunning === true)
@@ -459,7 +476,10 @@ export const ViewPage: React.FC = () => {
       }
     });
 
-    return cleanup;
+    return () => {
+      clearTimeout(initTimeout);
+      cleanup();
+    };
   }, []);
 
 
