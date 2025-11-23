@@ -129,6 +129,27 @@ export const ViewPage: React.FC = () => {
     judgeResultRef.current = judgeResult;
   }, [judgeResult]);
 
+  // CRITICAL: Reset all state on mount to prevent stale values from showing "Timer Ended"
+  useEffect(() => {
+    console.log('ViewPage: Component mounted, resetting all state');
+    // Explicitly reset all timer-related state on mount
+    setTimerEnded(false);
+    setIsRunning(false);
+    setIsPaused(false);
+    setIsResultVisible(false);
+    setPendingWord('');
+    setJudgeResult(null);
+    setTimeLeft(60);
+    // Reset all refs
+    judgeResultRef.current = null;
+    pendingJudgeResultRef.current = false;
+    wasRunningRef.current = false;
+    lastBeepRef.current = -1;
+    // Clear any existing timers
+    clearResultTimers();
+    console.log('ViewPage: All state reset on mount');
+  }, []); // Run only on mount
+
   // Play beep sounds when Latest Result becomes visible
   useEffect(() => {
     if (isResultVisible && judgeResult) {
@@ -151,11 +172,12 @@ export const ViewPage: React.FC = () => {
   useEffect(() => {
     console.log('ViewPage: Setting up broadcast listener');
     
-    // Mark as initialized after a short delay to avoid processing stale messages on mount
+    // Mark as initialized after a delay to avoid processing stale messages on mount
+    // Increased delay to ensure state reset completes first
     const initTimeout = setTimeout(() => {
       isInitializedRef.current = true;
       console.log('ViewPage: Initialized, will now process messages');
-    }, 100);
+    }, 500); // Increased from 100ms to 500ms for better reliability
     
     const cleanup = broadcastManager.listen((message: QuizMessage) => {
       console.log('ViewPage: Received message:', message.type, message);
