@@ -38,6 +38,8 @@ export const ViewPage: React.FC = () => {
   // Track display state in ref to prevent flashing during state transitions
   const shouldShowTimerRef = useRef<boolean>(false);
   const shouldShowResultRef = useRef<boolean>(false);
+  // Track if start beep has been played for current timer session to prevent double beep
+  const startBeepPlayedRef = useRef<boolean>(false);
 
   const clearResultTimers = () => {
     if (resultDelayTimeoutRef.current !== null) {
@@ -196,6 +198,7 @@ export const ViewPage: React.FC = () => {
     judgeResultRef.current = null;
     pendingJudgeResultRef.current = false;
     wasRunningRef.current = false;
+    startBeepPlayedRef.current = false;
     shouldShowTimerRef.current = false;
     shouldShowResultRef.current = false;
     lastBeepRef.current = -1;
@@ -351,9 +354,11 @@ export const ViewPage: React.FC = () => {
             const isNowRunning = message.data.isRunning;
             
             // Play start beep when timer first starts (transitions from not running to running)
-            if (!wasRunning && isNowRunning) {
+            // Use ref to prevent double beep if message is processed multiple times
+            if (!wasRunning && isNowRunning && !startBeepPlayedRef.current) {
               soundManager.ensureAudioContext();
               soundManager.playStartSound();
+              startBeepPlayedRef.current = true;
               console.log('Timer started - playing start beep');
             }
             
@@ -525,6 +530,7 @@ export const ViewPage: React.FC = () => {
             // No word - reset everything
             shouldShowTimerRef.current = false;
             shouldShowResultRef.current = false;
+            startBeepPlayedRef.current = false;
             setTimerEnded(false);
             setIsResultVisible(false);
             setIsRunning(false);
@@ -551,11 +557,12 @@ export const ViewPage: React.FC = () => {
           // Only play sound if there was something to clear
           if (hadActiveContent) {
             soundManager.ensureAudioContext();
-            soundManager.playWordClearBeep();
+          soundManager.playWordClearBeep();
           }
           
           shouldShowTimerRef.current = false;
           shouldShowResultRef.current = false;
+          startBeepPlayedRef.current = false;
           setPendingWord('');
           setTimeLeft(60);
           setIsRunning(false);
@@ -1066,38 +1073,38 @@ export const ViewPage: React.FC = () => {
       {displayMode === 'timer' && isResultVisible && (
         <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 pb-8 lg:pb-10 overflow-x-hidden">
           <div className="w-full max-w-5xl mx-auto">
-            <div
+          <div
               className={`w-full rounded-3xl border-2 p-4 sm:p-6 lg:p-8 text-center ${
-                judgeResult
-                  ? judgeResult.isCorrect
-                    ? 'bg-green-900/40 border-green-500 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
-                    : 'bg-red-900/40 border-red-500 shadow-[0_0_30px_rgba(248,113,113,0.3)]'
-                  : 'bg-slate-900/40 border-white/10'
-              }`}
-            >
+              judgeResult
+                ? judgeResult.isCorrect
+                  ? 'bg-green-900/40 border-green-500 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
+                  : 'bg-red-900/40 border-red-500 shadow-[0_0_30px_rgba(248,113,113,0.3)]'
+                : 'bg-slate-900/40 border-white/10'
+            }`}
+          >
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4 lg:mb-6">
-                <div className="text-left">
+              <div className="text-left">
                   <h3 className="text-2xl sm:text-3xl lg:text-4xl font-bold">Latest Result</h3>
-                  {judgeResult && (
+                {judgeResult && (
                     <p
                       className={`text-xl sm:text-2xl lg:text-3xl font-semibold mt-2 ${
                         judgeResult.isCorrect ? 'text-green-300' : 'text-red-300'
                       }`}
                     >
                       {judgeResult.isCorrect ? 'Correct spelling!' : 'Incorrect spelling'}
-                    </p>
-                  )}
-                </div>
-                {judgeResult && (
-                  <span
-                    className={`px-4 sm:px-6 py-2 rounded-full text-lg sm:text-xl lg:text-2xl font-semibold whitespace-nowrap ${
-                      judgeResult.isCorrect ? 'bg-green-500 text-slate-900' : 'bg-red-500 text-white'
-                    }`}
-                  >
-                    {judgeResult.isCorrect ? 'Correct' : 'Incorrect'}
-                  </span>
+                  </p>
                 )}
               </div>
+              {judgeResult && (
+                <span
+                    className={`px-4 sm:px-6 py-2 rounded-full text-lg sm:text-xl lg:text-2xl font-semibold whitespace-nowrap ${
+                    judgeResult.isCorrect ? 'bg-green-500 text-slate-900' : 'bg-red-500 text-white'
+                  }`}
+                >
+                  {judgeResult.isCorrect ? 'Correct' : 'Incorrect'}
+                </span>
+              )}
+            </div>
               <div
                 className={`rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl text-left ${
                   judgeResult

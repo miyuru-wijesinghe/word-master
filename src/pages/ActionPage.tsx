@@ -325,24 +325,24 @@ export const ActionPage: React.FC = () => {
 
     // Ensure we have valid data before broadcasting
     if (lastRow && lastRow.Word) {
-      // Broadcast selected entries and current word to manage screen
-      // Include word in data for ManageScreen, but set isRunning to false so ViewPage ignores it
-      const message: QuizMessage = {
-        type: 'update',
+    // Broadcast selected entries and current word to manage screen
+    // Include word in data for ManageScreen, but set isRunning to false so ViewPage ignores it
+    const message: QuizMessage = {
+      type: 'update',
         data: {
-          student: '',
-          word: lastRow.Word,
-          timeLeft: 0,
-          isRunning: false  // ViewPage will ignore this because isRunning is false
+        student: '',
+        word: lastRow.Word,
+        timeLeft: 0,
+        isRunning: false  // ViewPage will ignore this because isRunning is false
         },
         selectedEntries: newSelectedRows
           .filter(i => i >= 0 && i < quizData.length && quizData[i] && quizData[i].Word)
           .map(i => ({
-            word: quizData[i].Word,
+        word: quizData[i].Word,
             team: quizData[i].Team || ''
-          }))
-      };
-      broadcastManager.send(message);
+      }))
+    };
+    broadcastManager.send(message);
       console.log('ActionPage: Sent selection update:', { word: lastRow.Word, entries: message.selectedEntries });
     } else if (newSelectedRows.length === 0) {
       // Clear selection - send empty message
@@ -454,7 +454,7 @@ export const ActionPage: React.FC = () => {
                 return currentSelected;
               }
 
-              const lastSelectedIndex = currentSelected[currentSelected.length - 1];
+                const lastSelectedIndex = currentSelected[currentSelected.length - 1];
               const selectedData = quizSnapshot[lastSelectedIndex];
 
               if (!selectedData) {
@@ -462,14 +462,14 @@ export const ActionPage: React.FC = () => {
                 return currentSelected;
               }
 
-              const duration = message.control?.duration || 60;
-
+                const duration = message.control?.duration || 60;
+                
               setCurrentStudent('');
-              setCurrentWord(selectedData.Word);
-              setStartedRow(lastSelectedIndex);
+                setCurrentWord(selectedData.Word);
+                setStartedRow(lastSelectedIndex);
               updateTimerMetadata(duration);
-              setIsRunning(true);
-              setIsPaused(false);
+                setIsRunning(true);
+                setIsPaused(false);
               lastBeepRef.current = -1;
 
               const validSelectedEntries = currentSelected
@@ -478,20 +478,20 @@ export const ActionPage: React.FC = () => {
                   word: quizSnapshot[i].Word,
                   team: quizSnapshot[i].Team || ''
                 }));
-
-              const startMessage: QuizMessage = {
-                type: 'update',
-                data: {
-                  student: '',
-                  word: selectedData.Word,
-                  timeLeft: duration,
-                  isRunning: true,
+                
+                const startMessage: QuizMessage = {
+                  type: 'update',
+                  data: {
+                    student: '',
+                    word: selectedData.Word,
+                    timeLeft: duration,
+                    isRunning: true,
                   duration,
                   endsAt: timerEndTimestampRef.current || undefined
-                },
+                  },
                 selectedEntries: validSelectedEntries
-              };
-              broadcastManager.send(startMessage);
+                };
+                broadcastManager.send(startMessage);
               console.log('ActionPage: Sent start message:', { word: selectedData.Word, entries: validSelectedEntries });
 
               return currentSelected;
@@ -529,18 +529,18 @@ export const ActionPage: React.FC = () => {
                   }))
               : [];
             
-            const pauseMessage: QuizMessage = {
-              type: newPaused ? 'pause' : 'update',
-              data: {
+                    const pauseMessage: QuizMessage = {
+                      type: newPaused ? 'pause' : 'update',
+                      data: {
                 student: currentStudentValue || '',
                 word: currentWordValue || '',
                 timeLeft: currentTimeLeft,
                 isRunning: !newPaused,
                 endsAt: timerEndTimestampRef.current || undefined
-              },
+                      },
               selectedEntries: pauseValidEntries
-            };
-            broadcastManager.send(pauseMessage);
+                    };
+                    broadcastManager.send(pauseMessage);
             break;
           case 'end':
             console.log('ActionPage: Received control end message, stopping timer');
@@ -767,14 +767,14 @@ export const ActionPage: React.FC = () => {
         alert(`Successfully imported ${data.length} entries to quiz!`);
       } else {
         // Fallback to old behavior if Firestore not enabled
-        setQuizData(data);
-        setSelectedRows([]);
-        setStartedRow(null);
-        setIsRunning(false);
-        setIsPaused(false);
-        setTimeLeft(60);
-        setCurrentStudent('');
-        setCurrentWord('');
+      setQuizData(data);
+      setSelectedRows([]);
+      setStartedRow(null);
+      setIsRunning(false);
+      setIsPaused(false);
+      setTimeLeft(60);
+      setCurrentStudent('');
+      setCurrentWord('');
       }
       
       // Clear any stale state by sending a clear message
@@ -982,7 +982,7 @@ export const ActionPage: React.FC = () => {
   useEffect(() => {
     timeLeftRef.current = timeLeft;
   }, [timeLeft]);
-
+  
   // Timer interval - runs when timer is active
   useEffect(() => {
     if (timerIntervalRef.current !== null) {
@@ -1010,17 +1010,17 @@ export const ActionPage: React.FC = () => {
         pausedTimeLeftRef.current = newTime;
         timeLeftRef.current = newTime;
         setTimeLeft(newTime);
-
-        if (newTime <= 0) {
+          
+          if (newTime <= 0) {
           if (timerIntervalRef.current !== null) {
             clearInterval(timerIntervalRef.current);
             timerIntervalRef.current = null;
           }
 
           clearTimerMetadata();
-          setIsRunning(false);
-          setIsPaused(false);
-          setStartedRow(null);
+            setIsRunning(false);
+            setIsPaused(false);
+            setStartedRow(null);
           timeLeftRef.current = 0;
           setTimeLeft(0);
 
@@ -1072,15 +1072,15 @@ export const ActionPage: React.FC = () => {
           newTime === 20 ||
           newTime === 10
         ) {
-          if (lastBeepRef.current !== newTime) {
-            broadcastManager.sendSpeech(newTime, true);
+            if (lastBeepRef.current !== newTime) {
+              broadcastManager.sendSpeech(newTime, true);
+              lastBeepRef.current = newTime;
+            }
+          } else if (newTime <= 10 && newTime > 0 && lastBeepRef.current !== newTime) {
             lastBeepRef.current = newTime;
+            broadcastManager.sendSpeech(newTime, true);
           }
-        } else if (newTime <= 10 && newTime > 0 && lastBeepRef.current !== newTime) {
-          lastBeepRef.current = newTime;
-          broadcastManager.sendSpeech(newTime, true);
-        }
-
+          
         const broadcastTime = newTime;
         setTimeout(() => {
           const updateQuizData = quizDataRef.current;
@@ -1099,18 +1099,18 @@ export const ActionPage: React.FC = () => {
                 team: updateQuizData[i].Team || ''
               }));
             
-            const updateMessage: QuizMessage = {
-              type: 'update',
-              data: {
+          const updateMessage: QuizMessage = {
+            type: 'update',
+            data: {
                 student: currentStudentRef.current || '',
                 word: updateWord,
                 timeLeft: updateTime,
                 isRunning: true,
                 endsAt: updateEndsAt || undefined
-              },
+            },
               selectedEntries: validSelectedEntries
-            };
-            broadcastManager.send(updateMessage);
+          };
+          broadcastManager.send(updateMessage);
           } else {
             console.warn('ActionPage: Skipping timer update - invalid data:', {
               quizDataLength: updateQuizData?.length || 0,
@@ -1444,12 +1444,12 @@ export const ActionPage: React.FC = () => {
                 : 'No data uploaded yet. Please upload an Excel file.'}
             </div>
           ) : (
-            <DataTable
-              data={quizData}
-              selectedRows={selectedRows}
-              startedRow={startedRow}
-              onSelectRow={handleSelectRow}
-              onUpdateRow={handleUpdateRow}
+          <DataTable
+            data={quizData}
+            selectedRows={selectedRows}
+            startedRow={startedRow}
+            onSelectRow={handleSelectRow}
+            onUpdateRow={handleUpdateRow}
               onEdit={firestoreManager.isFirestoreEnabled() ? (index) => {
                 // Find the entry by index and open edit modal
                 const entry = quizData[index];

@@ -144,12 +144,12 @@ export const JudgePage: React.FC = () => {
     // Always send judge result - this is the main message that displays on view screen
     // displayTyped is already guaranteed to be a string from above
     const judgeMessage: QuizMessage = {
-      type: 'judge',
-      judgeData: {
-        actualWord: resolvedWord,
+        type: 'judge',
+        judgeData: {
+          actualWord: resolvedWord,
         typedWord: displayTyped, // Already a string, guaranteed above
-        isCorrect
-      }
+          isCorrect
+        }
     };
     
     console.log('Sending judge result:', JSON.stringify(judgeMessage, null, 2));
@@ -188,16 +188,16 @@ export const JudgePage: React.FC = () => {
           }
         });
       }, 500); // Increased from 200ms to 500ms for better reliability
-    }
+      }
 
     // Clear state after sending messages
     stopCountdown();
     timerEndTimestampRef.current = null;
-    setStatus('waiting');
-    setTimeLeft(0);
-    setCurrentWord('');
+      setStatus('waiting');
+      setTimeLeft(0);
+      setCurrentWord('');
     currentWordRef.current = '';
-    setTypedWord('');
+      setTypedWord('');
     typedWordRef.current = '';
 
     setAutoSubmitPending(false);
@@ -208,7 +208,7 @@ export const JudgePage: React.FC = () => {
       switch (message.type) {
         case 'update': {
           if (!message.data) break;
-          const incomingWord = message.data.word;
+            const incomingWord = message.data.word;
           const incomingTimeLeft = typeof message.data.timeLeft === 'number' ? message.data.timeLeft : 60;
           const isTimerRunning = !!message.data.isRunning;
 
@@ -242,12 +242,14 @@ export const JudgePage: React.FC = () => {
         }
         case 'pause':
           stopCountdown();
-          // Don't clear timerEndTimestampRef - preserve it for potential resume
-          // But if message has timeLeft, update it
-          if (message.data?.timeLeft !== undefined) {
+          // Update timerEndTimestampRef if endsAt is provided in pause message for proper sync
+          if (message.data?.endsAt) {
+            timerEndTimestampRef.current = message.data.endsAt;
+            const effectiveTimeLeft = Math.max(0, Math.floor((message.data.endsAt - Date.now()) / 1000));
+            setTimeLeft(effectiveTimeLeft);
+          } else if (message.data?.timeLeft !== undefined) {
+            // Fallback: if no endsAt, preserve timeLeft value
             setTimeLeft(message.data.timeLeft);
-            // If we have a timerEndTimestampRef, we can calculate the paused time
-            // But for now, just preserve the timeLeft value
           }
           setStatus('paused');
           setAutoSubmitPending(true);
