@@ -87,27 +87,24 @@ export const JudgePage: React.FC = () => {
       return;
     }
 
-    // For manual submissions, ALWAYS use ref as primary source because:
-    // 1. Ref is updated synchronously in onChange handler (guaranteed current)
-    // 2. State might be stale if button is clicked before React processes the update
-    // 3. State is only used as fallback if ref is somehow not updated
-    // 4. As last resort, read directly from textarea DOM element
-    // For auto submissions, use ref (state might be cleared by then)
+    // CRITICAL: For manual submissions, read DOM value FIRST as it's the most reliable source
+    // The DOM element always has the current value, even if React state/ref haven't updated yet
+    // This prevents empty values when user types and immediately clicks button
+    const domValue = (textareaRef.current?.value || '').trim();
     const refValue = (typedWordRef.current || '').trim();
     const stateValue = (typedWord || '').trim();
-    // Last resort: read directly from textarea DOM element
-    const domValue = (textareaRef.current?.value || '').trim();
     
-    // For manual: prefer ref (always current), then DOM, then state as fallback
-    // This ensures we get the latest value even if React hasn't processed state update
+    // For manual: prefer DOM (most reliable, always current), then ref, then state as fallback
+    // DOM is the source of truth since it's the actual input element
     let capturedTyped: string;
     if (trigger === 'manual') {
-      // Use ref first (guaranteed current from onChange), then DOM, then state as fallback
-      capturedTyped = refValue || domValue || stateValue;
+      // DOM first (most reliable - actual input value), then ref, then state
+      // This ensures we capture the value even if React hasn't processed the onChange yet
+      capturedTyped = domValue || refValue || stateValue;
       // If all are empty, that's okay - we'll send empty string
     } else {
-      // For auto, only use ref
-      capturedTyped = refValue;
+      // For auto, prefer ref (state might be cleared by then), but fallback to DOM
+      capturedTyped = refValue || domValue;
     }
     
     console.log('Capturing typed word:', {

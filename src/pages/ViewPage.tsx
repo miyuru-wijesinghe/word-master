@@ -717,15 +717,41 @@ export const ViewPage: React.FC = () => {
           break;
         case 'judge':
           if (message.judgeData) {
-            if (
-              !isExpectingJudgeRef.current &&
-              !pendingJudgeResultRef.current &&
-              !wasRunningRef.current &&
-              !isRunning &&
-              !isPaused
-            ) {
-              console.log('ViewPage: Ignoring judge result - no active round or expectation');
+            // Check if message is stale first
+            const sentAt = typeof message.sentAt === 'number' ? message.sentAt : null;
+            if (sentAt) {
+              const age = Date.now() - sentAt;
+              if (age > STALE_MESSAGE_MAX_MS) {
+                console.log('ViewPage: Ignoring stale judge result:', {
+                  age,
+                  sentAt,
+                  actualWord: message.judgeData.actualWord
+                });
+                break;
+              }
+            }
+            
+            // Accept judge results if:
+            // 1. We have a valid actualWord (there was a word being judged)
+            // 2. Message is recent (checked above)
+            // 3. We're not already showing a different result (unless it's for the same word)
+            const hasValidWord = message.judgeData.actualWord && message.judgeData.actualWord.trim() !== '';
+            const isSameWord = judgeResultRef.current?.actualWord === message.judgeData.actualWord;
+            
+            // Only ignore if we have no valid word OR if we're showing a different word's result
+            if (!hasValidWord) {
+              console.log('ViewPage: Ignoring judge result - no valid actualWord');
               break;
+            }
+            
+            // If we already have a result for a different word, ignore the new one (unless it's more recent)
+            if (judgeResultRef.current && !isSameWord && sentAt) {
+              // Could check if new message is more recent, but for simplicity, accept if timer was running recently
+              const hadActiveTimer = wasRunningRef.current || isRunning || isPaused || isExpectingJudgeRef.current;
+              if (!hadActiveTimer) {
+                console.log('ViewPage: Ignoring judge result - different word and no active timer');
+                break;
+              }
             }
             console.log('ViewPage: Received judge result:', message.judgeData);
             console.log('ViewPage: Typed word received:', {

@@ -2,13 +2,14 @@ import { firebaseSyncManager } from './firebaseSync';
 
 export interface QuizMessage {
   type: 'update' | 'pause' | 'end' | 'clear' | 'speech' | 'control' | 'video' | 'judge';
+  sentAt?: number; // Timestamp when message was sent (for stale message filtering)
   data?: {
     student: string;
     word: string;
     timeLeft: number;
     isRunning: boolean;
     duration?: number;
-    endsAt?: number;
+    endsAt?: number; // Timestamp when timer will end
   };
   speechData?: {
     timeLeft: number;
@@ -35,7 +36,6 @@ export interface QuizMessage {
     typedWord: string;
     isCorrect: boolean;
   };
-  sentAt?: number;
 }
 
 class BroadcastManager {
@@ -74,14 +74,16 @@ class BroadcastManager {
   }
 
   send(message: QuizMessage) {
-    const timestampedMessage: QuizMessage = {
+    console.log('BroadcastManager.send called with:', message);
+    // Always add sentAt timestamp for stale message filtering
+    const messageWithTimestamp: QuizMessage = {
       ...message,
       sentAt: message.sentAt ?? Date.now()
     };
-    console.log('BroadcastManager.send called with:', timestampedMessage);
+    
     // Send via BroadcastChannel for same-device sync (fast, immediate)
     try {
-      this.channel.postMessage(timestampedMessage);
+      this.channel.postMessage(messageWithTimestamp);
       console.log('Message posted to BroadcastChannel');
     } catch (error) {
       console.error('Error posting to BroadcastChannel:', error);
@@ -89,7 +91,7 @@ class BroadcastManager {
     
     // Also send via Firebase for cross-device sync
     if (firebaseSyncManager.isFirebaseEnabled()) {
-      firebaseSyncManager.send(timestampedMessage).catch(error => {
+      firebaseSyncManager.send(messageWithTimestamp).catch(error => {
         console.error('Firebase send error:', error);
       });
     }
