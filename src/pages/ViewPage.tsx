@@ -30,6 +30,8 @@ export const ViewPage: React.FC = () => {
   const pendingJudgeResultRef = useRef<boolean>(false);
   // Track if page has been initialized - prevents processing stale messages on mount
   const isInitializedRef = useRef<boolean>(false);
+  const timerEndTimestampRef = useRef<number | null>(null);
+  const countdownIntervalRef = useRef<number | null>(null);
 
   const clearResultTimers = () => {
     if (resultDelayTimeoutRef.current !== null) {
@@ -42,8 +44,31 @@ export const ViewPage: React.FC = () => {
     }
   };
 
+  const stopCountdown = () => {
+    if (countdownIntervalRef.current !== null) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+  };
+
+  const startCountdown = () => {
+    stopCountdown();
+    countdownIntervalRef.current = window.setInterval(() => {
+      if (timerEndTimestampRef.current && !pendingJudgeResultRef.current) {
+        const nextTime = Math.max(0, Math.floor((timerEndTimestampRef.current - Date.now()) / 1000));
+        setTimeLeft(nextTime);
+        if (nextTime <= 0) {
+          stopCountdown();
+          timerEndTimestampRef.current = null;
+        }
+      }
+    }, 250);
+  };
+
   const startResultWindow = (wordToShow?: string, immediate: boolean = false, preserveJudgeResult: boolean = false) => {
     clearResultTimers();
+    stopCountdown();
+    timerEndTimestampRef.current = null;
     
     // CRITICAL: Only set timerEnded if there's actually a word to show
     // This prevents "Timer Ended" screen from appearing when there's no word
@@ -129,6 +154,12 @@ export const ViewPage: React.FC = () => {
     judgeResultRef.current = judgeResult;
   }, [judgeResult]);
 
+  useEffect(() => {
+    return () => {
+      stopCountdown();
+    };
+  }, []);
+
   // CRITICAL: Reset all state on mount to prevent stale values from showing "Timer Ended"
   // This MUST run synchronously before any other effects
   // Also clears any cached state that might persist
@@ -153,6 +184,8 @@ export const ViewPage: React.FC = () => {
     mediaTypeRef.current = 'video'; // Reset media type ref
     // Clear any existing timers
     clearResultTimers();
+    stopCountdown();
+    timerEndTimestampRef.current = null;
     console.log('ViewPage: All state and cache reset on mount');
   }, []); // Run only on mount
 
@@ -253,6 +286,16 @@ export const ViewPage: React.FC = () => {
             clearResultTimers();
           }
           
+          let effectiveTimeLeft = message.data?.timeLeft ?? timeLeft;
+          if (message.data?.endsAt && message.data.isRunning) {
+            timerEndTimestampRef.current = message.data.endsAt;
+            effectiveTimeLeft = Math.max(0, Math.floor((message.data.endsAt - Date.now()) / 1000));
+            startCountdown();
+          } else if (message.data && !message.data.isRunning) {
+            timerEndTimestampRef.current = null;
+            stopCountdown();
+          }
+          
           // Only update ViewPage if timer is actually running (isRunning === true)
           // Don't update on row selection - that's only for ManageScreen
           if (message.data && message.data.isRunning) {
@@ -266,7 +309,7 @@ export const ViewPage: React.FC = () => {
               console.log('Timer started - playing start beep');
             }
             
-            setTimeLeft(message.data.timeLeft);
+            setTimeLeft(effectiveTimeLeft);
             setIsRunning(message.data.isRunning);
             setIsPaused(!message.data.isRunning);
             setTimerEnded(false);
@@ -300,6 +343,8 @@ export const ViewPage: React.FC = () => {
           }
           break;
         case 'pause':
+          stopCountdown();
+          timerEndTimestampRef.current = null;
           setIsPaused(true);
           setIsRunning(false);
           wasRunningRef.current = false;
@@ -317,6 +362,8 @@ export const ViewPage: React.FC = () => {
             setIsResultVisible(false);
             setPendingWord('');
             clearResultTimers();
+            stopCountdown();
+            timerEndTimestampRef.current = null;
             // Timer will be started by the update message from ActionPage
             // But we prepare the state here to ensure counter appears
             const duration = message.control.duration || 60;
@@ -333,6 +380,10 @@ export const ViewPage: React.FC = () => {
                 const newPaused = !prevPaused;
                 setIsRunning(!newPaused);
                 wasRunningRef.current = !newPaused;
+                if (newPaused) {
+                  stopCountdown();
+                  timerEndTimestampRef.current = null;
+                }
                 console.log('ViewPage: Toggling pause state', { from: prevPaused, to: newPaused, isRunning: !newPaused });
                 return newPaused;
               });
@@ -361,6 +412,8 @@ export const ViewPage: React.FC = () => {
             }
             // Clear timers and reset state
             clearResultTimers();
+            stopCountdown();
+            timerEndTimestampRef.current = null;
             setTimerEnded(false);
             setIsResultVisible(false);
             setIsRunning(false);
@@ -398,6 +451,8 @@ export const ViewPage: React.FC = () => {
           }
           // Only clear timers if we don't have a judge result
           clearResultTimers();
+          stopCountdown();
+          timerEndTimestampRef.current = null;
           if (message.data && message.data.word) {
             const wordToShow = message.data.word;
             soundManager.ensureAudioContext();
@@ -428,6 +483,8 @@ export const ViewPage: React.FC = () => {
           const hadActiveContent = pendingWord || isRunning || isPaused || timerEnded || isResultVisible || judgeResult || judgeResultRef.current || videoUrl || displayMode === 'video';
           
           clearResultTimers();
+          stopCountdown();
+          timerEndTimestampRef.current = null;
           
           // Only play sound if there was something to clear
           if (hadActiveContent) {
@@ -633,20 +690,39 @@ export const ViewPage: React.FC = () => {
             });
             // CRITICAL: Set pending flag FIRST to protect against out-of-order messages
             pendingJudgeResultRef.current = true;
+            
+            // Ensure typedWord is always a string (even if empty)
+            const normalizedJudgeData = {
+              ...message.judgeData,
+              typedWord: (message.judgeData.typedWord !== undefined && message.judgeData.typedWord !== null)
+                ? String(message.judgeData.typedWord)
+                : '',
+              actualWord: String(message.judgeData.actualWord || ''),
+              isCorrect: message.judgeData.isCorrect || false
+            };
+            
             // CRITICAL: Set judge result ref FIRST (synchronously) before any state updates
             // This ensures 'end' messages that arrive later will see the ref and skip processing
-            judgeResultRef.current = message.judgeData;
-            console.log('ViewPage: Judge result ref set immediately:', judgeResultRef.current);
+            judgeResultRef.current = normalizedJudgeData;
+            console.log('ViewPage: Judge result ref set immediately:', {
+              actualWord: judgeResultRef.current.actualWord,
+              typedWord: judgeResultRef.current.typedWord,
+              typedWordType: typeof judgeResultRef.current.typedWord,
+              typedWordLength: judgeResultRef.current.typedWord.length,
+              isCorrect: judgeResultRef.current.isCorrect
+            });
             console.log('ViewPage: Pending judge result flag set to true');
             
             // Clear any existing result timers first
             clearResultTimers();
+            stopCountdown();
+            timerEndTimestampRef.current = null;
             // Ensure we're in timer mode to display results
             setDisplayMode('timer');
-            // Set judge result state (ref already set above)
-            setJudgeResult(message.judgeData);
-            console.log('ViewPage: Judge result state set:', message.judgeData);
-            console.log('ViewPage: Judge result typedWord after setting:', judgeResultRef.current?.typedWord);
+            // Set judge result state (ref already set above) - use normalized data
+            setJudgeResult(normalizedJudgeData);
+            console.log('ViewPage: Judge result state set with normalized data:', normalizedJudgeData);
+            console.log('ViewPage: Judge result typedWord after setting state:', normalizedJudgeData.typedWord);
             // Stop timer states IMMEDIATELY - this stops the counter from updating
             setIsRunning(false);
             setIsPaused(false);
@@ -920,7 +996,7 @@ export const ViewPage: React.FC = () => {
                   <div className="rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-black border-indigo-400/60 min-w-0">
                     <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold uppercase tracking-wider text-slate-200 mb-3">Spelled Word</p>
                     <p className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(129,140,248,0.4)] leading-tight" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', hyphens: 'auto' }}>
-                      {judgeResult.typedWord !== undefined && judgeResult.typedWord !== null ? judgeResult.typedWord : '—'}
+                      {judgeResult.typedWord !== undefined && judgeResult.typedWord !== null && judgeResult.typedWord.trim() !== '' ? judgeResult.typedWord : '—'}
                   </p>
                 </div>
               )}

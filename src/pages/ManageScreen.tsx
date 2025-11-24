@@ -31,6 +31,39 @@ export const ManageScreen: React.FC = () => {
   const prevWordRef = useRef<string>('');
   // Track if page has been initialized - prevents processing stale messages on mount
   const isInitializedRef = useRef<boolean>(false);
+  const timerEndTimestampRef = useRef<number | null>(null);
+  const countdownIntervalRef = useRef<number | null>(null);
+
+  const stopLocalCountdown = () => {
+    if (countdownIntervalRef.current !== null) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+  };
+
+  const startLocalCountdown = () => {
+    stopLocalCountdown();
+    countdownIntervalRef.current = window.setInterval(() => {
+      if (timerEndTimestampRef.current) {
+        const nextTime = Math.max(0, Math.floor((timerEndTimestampRef.current - Date.now()) / 1000));
+        setTimeLeft(nextTime);
+        prevTimeLeftRef.current = nextTime;
+        if (nextTime <= 0) {
+          stopLocalCountdown();
+          timerEndTimestampRef.current = null;
+          setIsRunning(false);
+          setIsPaused(false);
+          setTimerEnded(true);
+        }
+      }
+    }, 250);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopLocalCountdown();
+    };
+  }, []);
 
   const resetAfterEnd = (options?: { keepWord?: boolean }) => {
     setTimerEnded(false);
@@ -41,6 +74,8 @@ export const ManageScreen: React.FC = () => {
     setIsRunning(false);
     setIsPaused(false);
     setTimeLeft(0);
+    timerEndTimestampRef.current = null;
+    stopLocalCountdown();
   };
 
   useEffect(() => {
@@ -72,7 +107,21 @@ export const ManageScreen: React.FC = () => {
       // Update timer state
       if (message.data) {
         const { timeLeft: incomingTime, isRunning: incomingRunning, word } = message.data;
-        const isSelectionUpdate = message.type === 'update' && !incomingRunning && incomingTime === 0;
+        let computedTimeLeft = incomingTime;
+
+        if (message.data.endsAt && incomingRunning) {
+          timerEndTimestampRef.current = message.data.endsAt;
+          computedTimeLeft = Math.max(0, Math.floor((message.data.endsAt - Date.now()) / 1000));
+          startLocalCountdown();
+        } else if (!incomingRunning) {
+          timerEndTimestampRef.current = null;
+          stopLocalCountdown();
+        } else if (incomingRunning && !message.data.endsAt) {
+          timerEndTimestampRef.current = Date.now() + incomingTime * 1000;
+          startLocalCountdown();
+        }
+
+        const isSelectionUpdate = message.type === 'update' && !incomingRunning && computedTimeLeft === 0;
 
         // CRITICAL: Ignore word updates from stale messages before initialization
         // This prevents showing words like 'Astral' on initial load
@@ -103,9 +152,9 @@ export const ManageScreen: React.FC = () => {
         }
         
         // Only update timeLeft if it actually changed - prevents unnecessary re-renders
-        if (incomingTime !== prevTimeLeftRef.current) {
-        setTimeLeft(incomingTime);
-          prevTimeLeftRef.current = incomingTime;
+        if (computedTimeLeft !== prevTimeLeftRef.current) {
+          setTimeLeft(computedTimeLeft);
+          prevTimeLeftRef.current = computedTimeLeft;
         }
         
         // Only update isRunning if it actually changed
@@ -142,6 +191,8 @@ export const ManageScreen: React.FC = () => {
       
       // Handle pause
       if (message.type === 'pause') {
+        timerEndTimestampRef.current = null;
+        stopLocalCountdown();
         if (!prevIsPausedRef.current) {
         setIsPaused(true);
           prevIsPausedRef.current = true;
@@ -154,6 +205,8 @@ export const ManageScreen: React.FC = () => {
       
       // Handle end - differentiate between natural timer end and End button press
       if (message.type === 'end') {
+        timerEndTimestampRef.current = null;
+        stopLocalCountdown();
         if (prevIsRunningRef.current) {
         setIsRunning(false);
           prevIsRunningRef.current = false;
@@ -188,6 +241,8 @@ export const ManageScreen: React.FC = () => {
       if (message.type === 'judge' && message.judgeData) {
         if (timerActiveRef.current) {
           resetAfterEnd();
+          timerEndTimestampRef.current = null;
+          stopLocalCountdown();
         }
       }
     });
@@ -223,6 +278,9 @@ export const ManageScreen: React.FC = () => {
     setIsRunning(false); // Will be set to true by the control message
     setHasStarted(false); // Will be set to true by the control message
     setTimeLeft(duration);
+    prevTimeLeftRef.current = duration;
+    timerEndTimestampRef.current = Date.now() + duration * 1000;
+    startLocalCountdown();
     
     // Broadcast mode change to timer
     broadcastManager.send({
@@ -260,6 +318,13 @@ export const ManageScreen: React.FC = () => {
     setIsPaused(nextPaused);
     setIsRunning(!nextPaused);
     setHasStarted(true);
+    if (nextPaused) {
+      timerEndTimestampRef.current = null;
+      stopLocalCountdown();
+    } else {
+      timerEndTimestampRef.current = Date.now() + timeLeft * 1000;
+      startLocalCountdown();
+    }
     
     const message: QuizMessage = {
       type: 'control',

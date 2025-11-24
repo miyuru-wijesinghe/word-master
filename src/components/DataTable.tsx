@@ -7,9 +7,18 @@ interface DataTableProps {
   startedRow: number | null;
   onSelectRow: (index: number) => void;
   onUpdateRow?: (index: number, field: keyof QuizRow, value: string) => void;
+  onEdit?: (index: number) => void;
+  onDelete?: (index: number) => void;
 }
 
-export const DataTable: React.FC<DataTableProps> = ({ data, selectedRows, startedRow, onSelectRow }) => {
+export const DataTable: React.FC<DataTableProps> = ({ 
+  data, 
+  selectedRows, 
+  startedRow, 
+  onSelectRow,
+  onEdit,
+  onDelete
+}) => {
   if (data.length === 0) {
     return (
       <div className="text-center py-8 text-gray-500">
@@ -83,18 +92,38 @@ export const DataTable: React.FC<DataTableProps> = ({ data, selectedRows, starte
                 {row.WordOrigin || '--'}
               </td>
               <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
-                <button
-                  onClick={() => onSelectRow(index)}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
-                    startedRow === index
-                      ? 'bg-green-600 text-white hover:bg-green-700 shadow-lg transform scale-105'
-                      : selectedRows.includes(index)
-                      ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg transform scale-105'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:shadow-md'
-                  }`}
-                >
-                  {startedRow === index ? 'Started' : selectedRows.includes(index) ? '✓ Selected' : 'Select'}
-                </button>
+                <div className="flex gap-2 items-center">
+                  <button
+                    onClick={() => onSelectRow(index)}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                      startedRow === index
+                        ? 'bg-green-600 text-white hover:bg-green-700 shadow-lg transform scale-105'
+                        : selectedRows.includes(index)
+                        ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg transform scale-105'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:shadow-md'
+                    }`}
+                  >
+                    {startedRow === index ? 'Started' : selectedRows.includes(index) ? '✓ Selected' : 'Select'}
+                  </button>
+                  {onEdit && (
+                    <button
+                      onClick={() => onEdit(index)}
+                      className="px-3 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-colors text-sm"
+                      title="Edit entry"
+                    >
+                      ✏️
+                    </button>
+                  )}
+                  {onDelete && (
+                    <button
+                      onClick={() => onDelete(index)}
+                      className="px-3 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors text-sm"
+                      title="Delete entry"
+                    >
+                      🗑️
+                    </button>
+                  )}
+                </div>
               </td>
             </tr>
           ))}

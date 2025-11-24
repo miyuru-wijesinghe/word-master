@@ -5,6 +5,7 @@ import { parseExcelFile } from '../utils/excelParser';
 import type { QuizRow } from '../utils/excelParser';
 import { broadcastManager } from '../utils/broadcast';
 import type { QuizMessage } from '../utils/broadcast';
+import { firestoreManager, type Quiz, type QuizEntry } from '../utils/firestoreManager';
 import * as XLSX from 'xlsx';
 
 export const ActionPage: React.FC = () => {
@@ -20,9 +21,296 @@ export const ActionPage: React.FC = () => {
   const [showJudgeAlert, setShowJudgeAlert] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const judgeAlertTimeoutRef = useRef<number | null>(null);
+  const JUDGE_ALERT_AUTO_HIDE_MS = 6000;
+  useEffect(() => {
+    if (showJudgeAlert && judgeResult) {
+      if (judgeAlertTimeoutRef.current) {
+        clearTimeout(judgeAlertTimeoutRef.current);
+      }
+      judgeAlertTimeoutRef.current = window.setTimeout(() => {
+        setShowJudgeAlert(false);
+        setJudgeResult(null);
+        judgeAlertTimeoutRef.current = null;
+      }, JUDGE_ALERT_AUTO_HIDE_MS);
+    }
+
+    return () => {
+      if (judgeAlertTimeoutRef.current) {
+        clearTimeout(judgeAlertTimeoutRef.current);
+        judgeAlertTimeoutRef.current = null;
+      }
+    };
+  }, [showJudgeAlert, judgeResult]);
+
+  
+  // Firestore state
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [selectedQuizId, setSelectedQuizId] = useState<string | null>(null);
+  const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
+  const [isLoadingEntries, setIsLoadingEntries] = useState(false);
+  const [showCreateQuizModal, setShowCreateQuizModal] = useState(false);
+  const [newQuizName, setNewQuizName] = useState('');
+  const [showAddEntryModal, setShowAddEntryModal] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<QuizEntry | null>(null);
+  const [entryForm, setEntryForm] = useState<QuizRow>({
+    Team: '',
+    Word: '',
+    Pronunciation: '',
+    AlternativePronunciation: '',
+    WordOrigin: '',
+    Meaning: '',
+    WordInContext: ''
+  });
+
+  // ========== FIRESTORE OPERATIONS ==========
+  
+  // Load all quizzes
+  const loadQuizzes = async () => {
+    if (!firestoreManager.isFirestoreEnabled()) {
+      console.warn('Firestore not enabled');
+      return;
+    }
+    
+    setIsLoadingQuizzes(true);
+    try {
+      const quizList = await firestoreManager.listQuizzes();
+      setQuizzes(quizList);
+      console.log('Loaded quizzes:', quizList.length);
+    } catch (error) {
+      console.error('Error loading quizzes:', error);
+      alert('Failed to load quizzes: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsLoadingQuizzes(false);
+    }
+  };
+
+  // Load entries for selected quiz
+  const loadQuizEntries = async (quizId: string) => {
+    if (!firestoreManager.isFirestoreEnabled()) {
+      console.warn('Firestore not enabled');
+      return;
+    }
+    
+    setIsLoadingEntries(true);
+    try {
+      const entries = await firestoreManager.getEntries(quizId);
+      // Convert QuizEntry[] to QuizRow[] for compatibility
+      const rows: QuizRow[] = entries.map(entry => ({
+        Team: entry.Team,
+        Word: entry.Word,
+        Pronunciation: entry.Pronunciation,
+        AlternativePronunciation: entry.AlternativePronunciation,
+        WordOrigin: entry.WordOrigin,
+        Meaning: entry.Meaning,
+        WordInContext: entry.WordInContext
+      }));
+      setQuizData(rows);
+      setSelectedRows([]);
+      setStartedRow(null);
+      console.log('Loaded entries:', entries.length);
+    } catch (error) {
+      console.error('Error loading entries:', error);
+      alert('Failed to load quiz entries: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsLoadingEntries(false);
+    }
+  };
+
+  // Create new quiz
+  const handleCreateQuiz = async () => {
+    if (!newQuizName.trim()) {
+      alert('Please enter a quiz name');
+      return;
+    }
+    
+    try {
+      const quizId = await firestoreManager.createQuiz(newQuizName.trim());
+      await loadQuizzes();
+      setSelectedQuizId(quizId);
+      await loadQuizEntries(quizId);
+      setShowCreateQuizModal(false);
+      setNewQuizName('');
+      alert('Quiz created successfully!');
+    } catch (error) {
+      console.error('Error creating quiz:', error);
+      alert('Failed to create quiz: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  // Handle quiz selection
+  const handleSelectQuiz = async (quizId: string) => {
+    setSelectedQuizId(quizId);
+    await loadQuizEntries(quizId);
+  };
+
+  // Handle add entry
+  const handleAddEntry = async () => {
+    if (!selectedQuizId) {
+      alert('Please select a quiz first');
+      return;
+    }
+    
+    if (!entryForm.Word.trim()) {
+      alert('Please enter a word');
+      return;
+    }
+    
+    try {
+      await firestoreManager.addEntry(selectedQuizId, entryForm);
+      await loadQuizEntries(selectedQuizId);
+      setShowAddEntryModal(false);
+      setEntryForm({
+        Team: '',
+        Word: '',
+        Pronunciation: '',
+        AlternativePronunciation: '',
+        WordOrigin: '',
+        Meaning: '',
+        WordInContext: ''
+      });
+    } catch (error) {
+      console.error('Error adding entry:', error);
+      alert('Failed to add entry: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  // Handle edit entry
+  const handleEditEntry = async () => {
+    if (!selectedQuizId || !editingEntry) {
+      return;
+    }
+    
+    try {
+      await firestoreManager.updateEntry(selectedQuizId, editingEntry.id, entryForm);
+      await loadQuizEntries(selectedQuizId);
+      setEditingEntry(null);
+      setEntryForm({
+        Team: '',
+        Word: '',
+        Pronunciation: '',
+        AlternativePronunciation: '',
+        WordOrigin: '',
+        Meaning: '',
+        WordInContext: ''
+      });
+    } catch (error) {
+      console.error('Error updating entry:', error);
+      alert('Failed to update entry: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  // Handle delete entry
+  const handleDeleteEntry = async (entryId: string) => {
+    if (!selectedQuizId) {
+      return;
+    }
+    
+    if (!confirm('Are you sure you want to delete this entry?')) {
+      return;
+    }
+    
+    try {
+      await firestoreManager.deleteEntry(selectedQuizId, entryId);
+      await loadQuizEntries(selectedQuizId);
+    } catch (error) {
+      console.error('Error deleting entry:', error);
+      alert('Failed to delete entry: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  // Handle delete quiz
+  const handleDeleteQuiz = async () => {
+    if (!selectedQuizId) {
+      alert('No quiz selected');
+      return;
+    }
+    
+    const quiz = quizzes.find(q => q.id === selectedQuizId);
+    const quizName = quiz?.name || 'this quiz';
+    
+    if (!confirm(`Are you sure you want to delete "${quizName}"? This will delete all entries in this quiz and cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      await firestoreManager.deleteQuiz(selectedQuizId);
+      setSelectedQuizId(null);
+      setQuizData([]);
+      setSelectedRows([]);
+      await loadQuizzes();
+      alert('Quiz deleted successfully');
+    } catch (error) {
+      console.error('Error deleting quiz:', error);
+      alert('Failed to delete quiz: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
+  };
+
+  // Open edit modal
+  const openEditModal = (entry: QuizEntry) => {
+    setEditingEntry(entry);
+    setEntryForm({
+      Team: entry.Team,
+      Word: entry.Word,
+      Pronunciation: entry.Pronunciation,
+      AlternativePronunciation: entry.AlternativePronunciation,
+      WordOrigin: entry.WordOrigin,
+      Meaning: entry.Meaning,
+      WordInContext: entry.WordInContext
+    });
+    setShowAddEntryModal(true);
+  };
+
+  // Load quizzes on mount and subscribe to real-time updates
+  useEffect(() => {
+    if (!firestoreManager.isFirestoreEnabled()) {
+      console.warn('Firestore not enabled, skipping quiz loading');
+      return;
+    }
+    
+    loadQuizzes();
+    
+    // Subscribe to real-time quiz updates
+    const unsubscribe = firestoreManager.subscribeToQuizzes((updatedQuizzes) => {
+      setQuizzes(updatedQuizzes);
+    });
+    
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Subscribe to real-time entry updates when quiz is selected
+  useEffect(() => {
+    if (!selectedQuizId || !firestoreManager.isFirestoreEnabled()) {
+      return;
+    }
+    
+    const unsubscribe = firestoreManager.subscribeToEntries(selectedQuizId, (entries) => {
+      const rows: QuizRow[] = entries.map(entry => ({
+        Team: entry.Team,
+        Word: entry.Word,
+        Pronunciation: entry.Pronunciation,
+        AlternativePronunciation: entry.AlternativePronunciation,
+        WordOrigin: entry.WordOrigin,
+        Meaning: entry.Meaning,
+        WordInContext: entry.WordInContext
+      }));
+      setQuizData(rows);
+    });
+    
+    return () => {
+      unsubscribe();
+    };
+  }, [selectedQuizId]);
 
   // Handle row selection - single selection, don't start
   const handleSelectRow = (index: number) => {
+    // Validate index and quizData
+    if (index < 0 || index >= quizData.length || !quizData[index]) {
+      console.error('ActionPage: Invalid row index:', index, 'quizData length:', quizData.length);
+      return;
+    }
+    
     const isAlreadySelected = selectedRows.length === 1 && selectedRows[0] === index;
     
     // Only keep one selection at a time
@@ -32,24 +320,44 @@ export const ActionPage: React.FC = () => {
     
     // Get the last selected row's word to display in ManageScreen
     const lastSelectedIndex = newSelectedRows.length > 0 ? newSelectedRows[0] : -1;
-    const lastRow = lastSelectedIndex >= 0 ? quizData[lastSelectedIndex] : null;
+    const lastRow = lastSelectedIndex >= 0 && lastSelectedIndex < quizData.length ? quizData[lastSelectedIndex] : null;
 
-    // Broadcast selected entries and current word to manage screen
-    // Include word in data for ManageScreen, but set isRunning to false so ViewPage ignores it
-    const message: QuizMessage = {
-      type: 'update',
-      data: lastRow ? {
-        student: '',
-        word: lastRow.Word,
-        timeLeft: 0,
-        isRunning: false  // ViewPage will ignore this because isRunning is false
-      } : undefined,
-      selectedEntries: newSelectedRows.map(i => ({
-        word: quizData[i].Word,
-        team: quizData[i].Team
-      }))
-    };
-    broadcastManager.send(message);
+    // Ensure we have valid data before broadcasting
+    if (lastRow && lastRow.Word) {
+      // Broadcast selected entries and current word to manage screen
+      // Include word in data for ManageScreen, but set isRunning to false so ViewPage ignores it
+      const message: QuizMessage = {
+        type: 'update',
+        data: {
+          student: '',
+          word: lastRow.Word,
+          timeLeft: 0,
+          isRunning: false  // ViewPage will ignore this because isRunning is false
+        },
+        selectedEntries: newSelectedRows
+          .filter(i => i >= 0 && i < quizData.length && quizData[i] && quizData[i].Word)
+          .map(i => ({
+            word: quizData[i].Word,
+            team: quizData[i].Team || ''
+          }))
+      };
+      broadcastManager.send(message);
+      console.log('ActionPage: Sent selection update:', { word: lastRow.Word, entries: message.selectedEntries });
+    } else if (newSelectedRows.length === 0) {
+      // Clear selection - send empty message
+      const message: QuizMessage = {
+        type: 'update',
+        data: {
+          student: '',
+          word: '',
+          timeLeft: 0,
+          isRunning: false
+        },
+        selectedEntries: []
+      };
+      broadcastManager.send(message);
+      console.log('ActionPage: Cleared selection');
+    }
   };
 
   // Handle row updates from dropdowns (not used in new format, but kept for compatibility)
@@ -110,21 +418,20 @@ export const ActionPage: React.FC = () => {
           typedWord: typedWord // Can be empty string - that's valid
         };
         
+        console.log('Control Panel: Received judge result:', {
+          actualWord: resultData.actualWord,
+          typedWord: resultData.typedWord,
+          typedWordType: typeof resultData.typedWord,
+          typedWordLength: resultData.typedWord.length,
+          isCorrect: resultData.isCorrect,
+          rawTypedWord: message.judgeData.typedWord,
+          rawTypedWordType: typeof message.judgeData.typedWord
+        });
         console.log('Control Panel: Setting judge result:', resultData);
         setJudgeResult(resultData);
         setShowJudgeAlert(true);
-        console.log('Control Panel: Alert should be visible now, typedWord:', typedWord, 'isEmpty:', typedWord === '');
+        console.log('Control Panel: Alert should be visible now, typedWord:', typedWord, 'isEmpty:', typedWord === '', 'willDisplay:', typedWord && typedWord.trim() !== '' ? typedWord : '—');
         
-        // Clear previous timeout if exists
-        if (judgeAlertTimeoutRef.current) {
-          clearTimeout(judgeAlertTimeoutRef.current);
-        }
-        
-        // Auto-hide alert after 8 seconds (increased for better visibility)
-        judgeAlertTimeoutRef.current = window.setTimeout(() => {
-          setShowJudgeAlert(false);
-          setJudgeResult(null);
-        }, 8000);
       }
       
       if (message.type === 'control' && message.control) {
@@ -147,11 +454,18 @@ export const ActionPage: React.FC = () => {
                 setCurrentStudent(''); // No longer using student name
                 setCurrentWord(selectedData.Word);
                 setStartedRow(lastSelectedIndex);
-                setTimeLeft(duration);
-                timeLeftRef.current = duration; // Update ref immediately
+                updateTimerMetadata(duration);
                 setIsRunning(true);
                 setIsPaused(false);
                 lastBeepRef.current = -1; // Reset beep tracking when timer starts
+                
+                // Validate data before sending
+                const validSelectedEntries = currentSelected
+                  .filter(i => i >= 0 && i < quizData.length && quizData[i] && quizData[i].Word)
+                  .map(i => ({
+                    word: quizData[i].Word,
+                    team: quizData[i].Team || ''
+                  }));
                 
                 const startMessage: QuizMessage = {
                   type: 'update',
@@ -160,14 +474,13 @@ export const ActionPage: React.FC = () => {
                     word: selectedData.Word,
                     timeLeft: duration,
                     isRunning: true,
-                    duration: duration
+                    duration,
+                    endsAt: timerEndTimestampRef.current || undefined
                   },
-                  selectedEntries: currentSelected.map(i => ({
-                    word: quizData[i].Word,
-                    team: quizData[i].Team
-                  }))
+                  selectedEntries: validSelectedEntries
                 };
                 broadcastManager.send(startMessage);
+                console.log('ActionPage: Sent start message:', { word: selectedData.Word, entries: validSelectedEntries });
               }
               return currentSelected;
             });
@@ -182,20 +495,37 @@ export const ActionPage: React.FC = () => {
             const currentWordValue = currentWordRef.current;
             const currentStudentValue = currentStudentRef.current;
             const currentTimeLeft = timeLeftRef.current;
+
+            if (newPaused) {
+              pausedTimeLeftRef.current = currentTimeLeft;
+              timerEndTimestampRef.current = null;
+            } else {
+              const resumeSeconds = pausedTimeLeftRef.current || currentTimeLeft;
+              timerEndTimestampRef.current = Date.now() + Math.max(0, resumeSeconds) * 1000;
+            }
             
-            // Send pause message immediately
+            // Send pause message immediately - validate data
+            const pauseQuizData = quizDataRef.current;
+            const pauseSelectedRows = selectedRowsRef.current;
+            const pauseValidEntries = pauseQuizData && pauseQuizData.length > 0
+              ? pauseSelectedRows
+                  .filter(i => i >= 0 && i < pauseQuizData.length && pauseQuizData[i] && pauseQuizData[i].Word)
+                  .map(i => ({
+                    word: pauseQuizData[i].Word,
+                    team: pauseQuizData[i].Team || ''
+                  }))
+              : [];
+            
             const pauseMessage: QuizMessage = {
               type: newPaused ? 'pause' : 'update',
               data: {
-                student: currentStudentValue,
-                word: currentWordValue,
+                student: currentStudentValue || '',
+                word: currentWordValue || '',
                 timeLeft: currentTimeLeft,
-                isRunning: !newPaused
+                isRunning: !newPaused,
+                endsAt: timerEndTimestampRef.current || undefined
               },
-              selectedEntries: selectedRowsRef.current.map(i => ({
-                word: quizDataRef.current[i].Word,
-                team: quizDataRef.current[i].Team
-              }))
+              selectedEntries: pauseValidEntries
             };
             broadcastManager.send(pauseMessage);
             break;
@@ -226,42 +556,66 @@ export const ActionPage: React.FC = () => {
             setCurrentWord('');
             currentWordRef.current = ''; // Clear ref value too
             setStartedRow(null);
+            clearTimerMetadata();
             
-            // Broadcast end message with word included
+            // Broadcast end message with word included - validate data
+            const endQuizData = quizDataRef.current;
+            const endSelectedRows = selectedRowsRef.current;
+            const endValidEntries = endQuizData && endQuizData.length > 0 && wordToShow
+              ? endSelectedRows
+                  .filter(i => i >= 0 && i < endQuizData.length && endQuizData[i] && endQuizData[i].Word)
+                  .map(i => ({
+                    word: endQuizData[i].Word,
+                    team: endQuizData[i].Team || ''
+                  }))
+              : [];
+            
             const endMessage: QuizMessage = {
               type: 'end',
               data: {
                 student: '',
-                word: wordToShow,
+                word: wordToShow || '',
                 timeLeft: 0,
-                isRunning: false
+                isRunning: false,
+                endsAt: timerEndTimestampRef.current || undefined
               },
-              selectedEntries: selectedRowsRef.current.map(i => ({
-                word: quizDataRef.current[i].Word,
-                team: quizDataRef.current[i].Team
-              }))
+              selectedEntries: endValidEntries
             };
             broadcastManager.send(endMessage);
-            console.log('ActionPage: Timer stopped and end message broadcasted');
+            console.log('ActionPage: Timer stopped and end message broadcasted:', { word: wordToShow, entries: endValidEntries });
             break;
           case 'addTime':
             if (addSeconds && (isRunning || isPaused)) {
               const newTime = Math.min(timeLeft + addSeconds, 3600); // Max 1 hour
               setTimeLeft(newTime);
+              timeLeftRef.current = newTime;
+              pausedTimeLeftRef.current = newTime;
+              if (timerEndTimestampRef.current) {
+                timerEndTimestampRef.current += addSeconds * 1000;
+              } else if (isRunning) {
+                timerEndTimestampRef.current = Date.now() + newTime * 1000;
+              }
               
-              // Broadcast updated time
+              // Broadcast updated time - validate data
+              const addTimeValidEntries = quizData && quizData.length > 0
+                ? selectedRows
+                    .filter(i => i >= 0 && i < quizData.length && quizData[i] && quizData[i].Word)
+                    .map(i => ({
+                      word: quizData[i].Word,
+                      team: quizData[i].Team || ''
+                    }))
+                : [];
+              
               const updateMessage: QuizMessage = {
                 type: 'update',
                 data: {
-                  student: currentStudent,
-                  word: currentWord,
+                  student: currentStudent || '',
+                  word: currentWord || '',
                   timeLeft: newTime,
-                  isRunning: isRunning
+                  isRunning: isRunning,
+                  endsAt: timerEndTimestampRef.current || undefined
                 },
-                selectedEntries: selectedRows.map(i => ({
-                  word: quizData[i].Word,
-                  team: quizData[i].Team
-                }))
+                selectedEntries: addTimeValidEntries
               };
               broadcastManager.send(updateMessage);
             }
@@ -334,6 +688,7 @@ export const ActionPage: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [selectedRows, isRunning, isPaused]);
 
+  // Excel import as migration tool (imports to selected quiz or creates new quiz)
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -355,7 +710,7 @@ export const ActionPage: React.FC = () => {
     const button = event.target.parentElement?.querySelector('button');
     if (button) {
       button.disabled = true;
-      button.textContent = 'Uploading...';
+      button.textContent = 'Importing...';
     }
 
     try {
@@ -373,22 +728,40 @@ export const ActionPage: React.FC = () => {
         return;
       }
       
-      setQuizData(data);
-      setSelectedRows([]);
-      setStartedRow(null);
-      setIsRunning(false);
-      setIsPaused(false);
-      setTimeLeft(60);
-      setCurrentStudent('');
-      setCurrentWord('');
+      // If Firestore is enabled, import to database
+      if (firestoreManager.isFirestoreEnabled()) {
+        let quizId = selectedQuizId;
+        
+        // If no quiz selected, create a new one
+        if (!quizId) {
+          const quizName = file.name.replace(/\.(xlsx|xls)$/i, '') || 'Imported Quiz';
+          quizId = await firestoreManager.createQuiz(quizName);
+          await loadQuizzes();
+          setSelectedQuizId(quizId);
+        }
+        
+        // Import entries
+        await firestoreManager.importEntries(quizId, data);
+        await loadQuizEntries(quizId);
+        alert(`Successfully imported ${data.length} entries to quiz!`);
+      } else {
+        // Fallback to old behavior if Firestore not enabled
+        setQuizData(data);
+        setSelectedRows([]);
+        setStartedRow(null);
+        setIsRunning(false);
+        setIsPaused(false);
+        setTimeLeft(60);
+        setCurrentStudent('');
+        setCurrentWord('');
+      }
       
       // Clear any stale state by sending a clear message
-      // This ensures all screens reset to default state when new Excel is uploaded
       broadcastManager.send({
         type: 'clear'
       });
     } catch (error) {
-      alert(`Error parsing Excel file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(`Error importing Excel file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       // Restore button state
       if (button) {
@@ -414,45 +787,73 @@ export const ActionPage: React.FC = () => {
     const lastSelectedIndex = selectedRows[selectedRows.length - 1];
     const selectedData = quizData[lastSelectedIndex];
     
+    const duration = 60;
     setCurrentStudent(''); // No longer using student name
     setCurrentWord(selectedData.Word);
     setStartedRow(lastSelectedIndex);
-    setTimeLeft(60);
+    updateTimerMetadata(duration);
     setIsRunning(true);
     setIsPaused(false);
 
-    // Broadcast to view page and manage screen
+    // Broadcast to view page and manage screen - validate data
+    const validSelectedEntries = quizData && quizData.length > 0
+      ? selectedRows
+          .filter(i => i >= 0 && i < quizData.length && quizData[i] && quizData[i].Word)
+          .map(i => ({
+            word: quizData[i].Word,
+            team: quizData[i].Team || ''
+          }))
+      : [];
+    
     const message: QuizMessage = {
       type: 'update',
       data: {
         student: '',
         word: selectedData.Word,
-        timeLeft: 60,
-        isRunning: true
+        timeLeft: duration,
+        isRunning: true,
+        duration,
+        endsAt: timerEndTimestampRef.current || undefined
       },
-      selectedEntries: selectedRows.map(i => ({
-        word: quizData[i].Word,
-        team: quizData[i].Team
-      }))
+      selectedEntries: validSelectedEntries
     };
     broadcastManager.send(message);
+    console.log('ActionPage: Sent start message from handleStart:', { word: selectedData.Word, entries: validSelectedEntries });
   };
 
   const handlePause = () => {
-    setIsPaused(!isPaused);
+    const newPaused = !isPaused;
+    setIsPaused(newPaused);
+    setIsRunning(!newPaused);
+
+    if (newPaused) {
+      pausedTimeLeftRef.current = timeLeftRef.current;
+      timerEndTimestampRef.current = null;
+    } else {
+      const resumeSeconds = pausedTimeLeftRef.current || timeLeftRef.current;
+      timerEndTimestampRef.current = Date.now() + resumeSeconds * 1000;
+    }
+    
+    // Validate data before sending
+    const validSelectedEntries = quizData && quizData.length > 0
+      ? selectedRows
+          .filter(i => i >= 0 && i < quizData.length && quizData[i] && quizData[i].Word)
+          .map(i => ({
+            word: quizData[i].Word,
+            team: quizData[i].Team || ''
+          }))
+      : [];
     
     const message: QuizMessage = {
-      type: isPaused ? 'update' : 'pause',
+      type: newPaused ? 'pause' : 'update',
       data: {
-        student: currentStudent,
-        word: currentWord,
+        student: currentStudent || '',
+        word: currentWord || '',
         timeLeft,
-        isRunning: !isPaused
+        isRunning: !newPaused,
+        endsAt: timerEndTimestampRef.current || undefined
       },
-      selectedEntries: selectedRows.map(i => ({
-        word: quizData[i].Word,
-        team: quizData[i].Team
-      }))
+      selectedEntries: validSelectedEntries
     };
     broadcastManager.send(message);
   };
@@ -467,23 +868,32 @@ export const ActionPage: React.FC = () => {
     setCurrentStudent('');
     setCurrentWord('');
     setStartedRow(null);
+    clearTimerMetadata();
     // Don't clear selectedRows - keep them for manage screen
 
-    // Broadcast end to view page and manage screen (with current word and selected entries)
+    // Broadcast end to view page and manage screen - validate data
+    const validSelectedEntries = quizData && quizData.length > 0 && wordToShow
+      ? selectedRows
+          .filter(i => i >= 0 && i < quizData.length && quizData[i] && quizData[i].Word)
+          .map(i => ({
+            word: quizData[i].Word,
+            team: quizData[i].Team || ''
+          }))
+      : [];
+    
     const message: QuizMessage = {
       type: 'end',
       data: {
         student: '',
-        word: wordToShow,
+        word: wordToShow || '',
         timeLeft: 0,
-        isRunning: false
+        isRunning: false,
+        endsAt: timerEndTimestampRef.current || undefined
       },
-      selectedEntries: selectedRows.map(i => ({
-        word: quizData[i].Word,
-        team: quizData[i].Team
-      }))
+      selectedEntries: validSelectedEntries
     };
     broadcastManager.send(message);
+    console.log('ActionPage: Sent end message from handleEnd:', { word: wordToShow, entries: validSelectedEntries });
   };
 
   // Ref to track last beep time
@@ -503,6 +913,21 @@ export const ActionPage: React.FC = () => {
   const isRunningRef = useRef(isRunning);
   const isPausedRef = useRef(isPaused);
   const timeLeftRef = useRef(timeLeft);
+  const timerEndTimestampRef = useRef<number | null>(null);
+  const pausedTimeLeftRef = useRef<number>(timeLeft);
+
+  const updateTimerMetadata = (seconds: number) => {
+    const safeSeconds = Math.max(0, Math.floor(seconds));
+    timerEndTimestampRef.current = Date.now() + safeSeconds * 1000;
+    pausedTimeLeftRef.current = safeSeconds;
+    timeLeftRef.current = safeSeconds;
+    setTimeLeft(safeSeconds);
+  };
+
+  const clearTimerMetadata = () => {
+    timerEndTimestampRef.current = null;
+    pausedTimeLeftRef.current = 0;
+  };
 
   useEffect(() => {
     currentWordRef.current = currentWord;
@@ -534,7 +959,6 @@ export const ActionPage: React.FC = () => {
 
   // Timer interval - runs when timer is active
   useEffect(() => {
-    // Clear any existing interval first to prevent duplicates
     if (timerIntervalRef.current !== null) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
@@ -542,9 +966,7 @@ export const ActionPage: React.FC = () => {
     
     if (isRunning && !isPaused) {
       timerIntervalRef.current = window.setInterval(() => {
-        // Check if timer was stopped externally BEFORE processing
         if (!isRunningRef.current || isPausedRef.current) {
-          // Timer was stopped, clear interval immediately
           if (timerIntervalRef.current !== null) {
             clearInterval(timerIntervalRef.current);
             timerIntervalRef.current = null;
@@ -552,105 +974,125 @@ export const ActionPage: React.FC = () => {
           return;
         }
 
-        setTimeLeft(prev => {
-          // Double-check state before decrementing
-          if (!isRunningRef.current || isPausedRef.current) {
-            return prev;
+        const endTimestamp = timerEndTimestampRef.current;
+        const now = Date.now();
+        const currentTime = timeLeftRef.current;
+        const newTime = endTimestamp
+          ? Math.max(0, Math.floor((endTimestamp - now) / 1000))
+          : Math.max(0, currentTime - 1);
+
+        pausedTimeLeftRef.current = newTime;
+        timeLeftRef.current = newTime;
+        setTimeLeft(newTime);
+
+        if (newTime <= 0) {
+          if (timerIntervalRef.current !== null) {
+            clearInterval(timerIntervalRef.current);
+            timerIntervalRef.current = null;
           }
 
-          // Prevent negative values - safety check
-          if (prev <= 0) {
-            // Timer already ended, stop interval immediately
-            if (timerIntervalRef.current !== null) {
-              clearInterval(timerIntervalRef.current);
-              timerIntervalRef.current = null;
-            }
-            // Update state to stop timer
-            setIsRunning(false);
-            setIsPaused(false);
-            setStartedRow(null);
-            timeLeftRef.current = 0;
-            return 0;
+          clearTimerMetadata();
+          setIsRunning(false);
+          setIsPaused(false);
+          setStartedRow(null);
+          timeLeftRef.current = 0;
+          setTimeLeft(0);
+
+          if (judgeResultReceivedRef.current) {
+            console.log('ActionPage: Timer ended but judge result already received, skipping end message');
+            judgeResultReceivedRef.current = false;
+            return;
           }
 
-          const newTime = prev - 1;
-          timeLeftRef.current = newTime; // Update ref immediately
-          
-          if (newTime <= 0) {
-            // Timer ended - stop interval immediately to prevent further decrements
-            if (timerIntervalRef.current !== null) {
-              clearInterval(timerIntervalRef.current);
-              timerIntervalRef.current = null;
-            }
-            
-            // Update state
-            setIsRunning(false);
-            setIsPaused(false);
-            setStartedRow(null);
-            timeLeftRef.current = 0;
-            
-            // CRITICAL: Don't send 'end' message if judge result was already received
-            // This prevents race condition where timer ends naturally after judge sends result
-            if (judgeResultReceivedRef.current) {
-              console.log('ActionPage: Timer ended but judge result already received, skipping end message');
-              judgeResultReceivedRef.current = false; // Reset for next round
-              return 0;
-            }
-            
-            // Broadcast end message with word included (only if no judge result)
+          const endQuizData = quizDataRef.current;
+          const endSelectedRows = selectedRowsRef.current;
+          const endWord = currentWordRef.current;
+
+          if (endWord && endQuizData && endQuizData.length > 0) {
+            const validSelectedEntries = endSelectedRows
+              .filter(i => i >= 0 && i < endQuizData.length && endQuizData[i] && endQuizData[i].Word)
+              .map(i => ({
+                word: endQuizData[i].Word,
+                team: endQuizData[i].Team || ''
+              }));
+
             const endMessage: QuizMessage = {
               type: 'end',
               data: {
                 student: '',
-                word: currentWordRef.current,
+                word: endWord,
                 timeLeft: 0,
-                isRunning: false
+                isRunning: false,
+                endsAt: timerEndTimestampRef.current || undefined
               },
-              selectedEntries: selectedRowsRef.current.map(i => ({
-                word: quizDataRef.current[i].Word,
-                team: quizDataRef.current[i].Team
-              }))
+              selectedEntries: validSelectedEntries
             };
             broadcastManager.send(endMessage);
-            
-            return 0;
+            console.log('ActionPage: Sent timer end message:', { word: endWord, entries: validSelectedEntries });
+          } else {
+            console.warn('ActionPage: Skipping end message - invalid data:', {
+              word: endWord,
+              quizDataLength: endQuizData?.length || 0
+            });
           }
-          
-          // Beep sound announcements (handled on ViewPage)
-          if (
-            newTime === 50 ||
-            newTime === 40 ||
-            newTime === 30 ||
-            newTime === 20 ||
-            newTime === 10
-          ) {
-            if (lastBeepRef.current !== newTime) {
-              broadcastManager.sendSpeech(newTime, true);
-              lastBeepRef.current = newTime;
-            }
-          } else if (newTime <= 10 && newTime > 0 && lastBeepRef.current !== newTime) {
-            lastBeepRef.current = newTime;
+
+          return;
+        }
+
+        if (
+          newTime === 50 ||
+          newTime === 40 ||
+          newTime === 30 ||
+          newTime === 20 ||
+          newTime === 10
+        ) {
+          if (lastBeepRef.current !== newTime) {
             broadcastManager.sendSpeech(newTime, true);
+            lastBeepRef.current = newTime;
           }
+        } else if (newTime <= 10 && newTime > 0 && lastBeepRef.current !== newTime) {
+          lastBeepRef.current = newTime;
+          broadcastManager.sendSpeech(newTime, true);
+        }
+
+        const broadcastTime = newTime;
+        setTimeout(() => {
+          const updateQuizData = quizDataRef.current;
+          const updateSelectedRows = selectedRowsRef.current;
+          const updateWord = currentWordRef.current;
+          const updateEndsAt = timerEndTimestampRef.current;
+          const updateTime = updateEndsAt
+            ? Math.max(0, Math.floor((updateEndsAt - Date.now()) / 1000))
+            : broadcastTime;
           
-          // Broadcast update with new time
-          const updateMessage: QuizMessage = {
-            type: 'update',
-            data: {
-              student: currentStudentRef.current,
-              word: currentWordRef.current,
-              timeLeft: newTime,
-              isRunning: true
-            },
-            selectedEntries: selectedRowsRef.current.map(i => ({
-              word: quizDataRef.current[i].Word,
-              team: quizDataRef.current[i].Team
-            }))
-          };
-          broadcastManager.send(updateMessage);
-          
-          return newTime;
-        });
+          if (updateQuizData && updateQuizData.length > 0 && updateWord) {
+            const validSelectedEntries = updateSelectedRows
+              .filter(i => i >= 0 && i < updateQuizData.length && updateQuizData[i] && updateQuizData[i].Word)
+              .map(i => ({
+                word: updateQuizData[i].Word,
+                team: updateQuizData[i].Team || ''
+              }));
+            
+            const updateMessage: QuizMessage = {
+              type: 'update',
+              data: {
+                student: currentStudentRef.current || '',
+                word: updateWord,
+                timeLeft: updateTime,
+                isRunning: true,
+                endsAt: updateEndsAt || undefined
+              },
+              selectedEntries: validSelectedEntries
+            };
+            broadcastManager.send(updateMessage);
+          } else {
+            console.warn('ActionPage: Skipping timer update - invalid data:', {
+              quizDataLength: updateQuizData?.length || 0,
+              word: updateWord,
+              selectedRows: updateSelectedRows
+            });
+          }
+        }, 0);
       }, 1000);
     }
     
@@ -660,7 +1102,7 @@ export const ActionPage: React.FC = () => {
         timerIntervalRef.current = null;
       }
     };
-  }, [isRunning, isPaused]); // Only depend on isRunning and isPaused
+  }, [isRunning, isPaused]);
 
   // Save selected data as new Excel file
   const handleSaveData = () => {
@@ -805,6 +1247,76 @@ export const ActionPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Quiz Management */}
+        {firestoreManager.isFirestoreEnabled() && (
+          <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+            <h2 className="text-xl font-semibold text-slate-900 mb-4">Quiz Management</h2>
+            
+            <div className="flex flex-wrap gap-3 mb-4">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-slate-700 mb-2">Select Quiz</label>
+                <select
+                  value={selectedQuizId || ''}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleSelectQuiz(e.target.value);
+                    } else {
+                      setSelectedQuizId(null);
+                      setQuizData([]);
+                    }
+                  }}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={isLoadingQuizzes}
+                >
+                  <option value="">-- Select a quiz --</option>
+                  {quizzes.map(quiz => (
+                    <option key={quiz.id} value={quiz.id}>{quiz.name}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="flex items-end gap-3">
+                <button
+                  onClick={() => setShowCreateQuizModal(true)}
+                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                >
+                  ➕ Create Quiz
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingEntry(null);
+                    setEntryForm({
+                      Team: '',
+                      Word: '',
+                      Pronunciation: '',
+                      AlternativePronunciation: '',
+                      WordOrigin: '',
+                      Meaning: '',
+                      WordInContext: ''
+                    });
+                    setShowAddEntryModal(true);
+                  }}
+                  disabled={!selectedQuizId}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                >
+                  ➕ Add Entry
+                </button>
+                <button
+                  onClick={handleDeleteQuiz}
+                  disabled={!selectedQuizId}
+                  className="bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                >
+                  🗑️ Delete Quiz
+                </button>
+              </div>
+            </div>
+
+            {isLoadingEntries && (
+              <div className="text-center py-4 text-slate-600">Loading entries...</div>
+            )}
+          </div>
+        )}
+
         {/* Controls */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
           <div className="flex flex-wrap gap-3 mb-6">
@@ -812,7 +1324,7 @@ export const ActionPage: React.FC = () => {
               onClick={() => fileInputRef.current?.click()}
               className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
             >
-              📁 Upload Excel
+              📁 {firestoreManager.isFirestoreEnabled() ? 'Import Excel' : 'Upload Excel'}
             </button>
             <button
               onClick={handleSaveData}
@@ -837,7 +1349,7 @@ export const ActionPage: React.FC = () => {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xlsx"
+            accept=".xlsx,.xls"
             onChange={handleFileUpload}
             className="hidden"
           />
@@ -846,15 +1358,233 @@ export const ActionPage: React.FC = () => {
 
         {/* Data Table */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-          <h2 className="text-xl font-semibold text-slate-900 mb-4">Spelling Challenge Roster</h2>
-          <DataTable
-            data={quizData}
-            selectedRows={selectedRows}
-            startedRow={startedRow}
-            onSelectRow={handleSelectRow}
-            onUpdateRow={handleUpdateRow}
-          />
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-slate-900">Spelling Challenge Roster</h2>
+            {firestoreManager.isFirestoreEnabled() && selectedQuizId && (
+              <div className="text-sm text-slate-600">
+                {quizData.length} {quizData.length === 1 ? 'entry' : 'entries'}
+              </div>
+            )}
+          </div>
+          
+          {quizData.length === 0 ? (
+            <div className="text-center py-12 text-slate-500">
+              {firestoreManager.isFirestoreEnabled() 
+                ? 'No entries yet. Select a quiz or create a new one to get started.'
+                : 'No data uploaded yet. Please upload an Excel file.'}
+            </div>
+          ) : (
+            <DataTable
+              data={quizData}
+              selectedRows={selectedRows}
+              startedRow={startedRow}
+              onSelectRow={handleSelectRow}
+              onUpdateRow={handleUpdateRow}
+              onEdit={firestoreManager.isFirestoreEnabled() ? (index) => {
+                // Find the entry by index and open edit modal
+                const entry = quizData[index];
+                // We need to get the full entry with ID - for now, we'll need to track this differently
+                // For simplicity, we'll reload entries and find by word/team match
+                if (selectedQuizId) {
+                  firestoreManager.getEntries(selectedQuizId).then(entries => {
+                    const matchingEntry = entries.find(e => 
+                      e.Word === entry.Word && e.Team === entry.Team
+                    );
+                    if (matchingEntry) {
+                      openEditModal(matchingEntry);
+                    }
+                  });
+                }
+              } : undefined}
+              onDelete={firestoreManager.isFirestoreEnabled() ? async (index) => {
+                if (!selectedQuizId) return;
+                const entry = quizData[index];
+                const entries = await firestoreManager.getEntries(selectedQuizId);
+                const matchingEntry = entries.find(e => 
+                  e.Word === entry.Word && e.Team === entry.Team
+                );
+                if (matchingEntry) {
+                  await handleDeleteEntry(matchingEntry.id);
+                }
+              } : undefined}
+            />
+          )}
         </div>
+
+        {/* Create Quiz Modal */}
+        {showCreateQuizModal && (
+          <>
+            <div 
+              className="fixed inset-0 bg-black/50 z-[9998]" 
+              onClick={() => {
+                setShowCreateQuizModal(false);
+                setNewQuizName('');
+              }}
+            />
+            <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[9999] bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+              <h3 className="text-2xl font-bold text-slate-900 mb-4">Create New Quiz</h3>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 mb-2">Quiz Name</label>
+                <input
+                  type="text"
+                  value={newQuizName}
+                  onChange={(e) => setNewQuizName(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleCreateQuiz();
+                    }
+                  }}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Enter quiz name..."
+                  autoFocus
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleCreateQuiz}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  Create
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCreateQuizModal(false);
+                    setNewQuizName('');
+                  }}
+                  className="flex-1 bg-slate-300 hover:bg-slate-400 text-slate-800 px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Add/Edit Entry Modal */}
+        {showAddEntryModal && (
+          <>
+            <div 
+              className="fixed inset-0 bg-black/50 z-[9998]" 
+              onClick={() => {
+                setShowAddEntryModal(false);
+                setEditingEntry(null);
+                setEntryForm({
+                  Team: '',
+                  Word: '',
+                  Pronunciation: '',
+                  AlternativePronunciation: '',
+                  WordOrigin: '',
+                  Meaning: '',
+                  WordInContext: ''
+                });
+              }}
+            />
+            <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[9999] bg-white rounded-xl shadow-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+              <h3 className="text-2xl font-bold text-slate-900 mb-4">
+                {editingEntry ? 'Edit Entry' : 'Add Entry'}
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Team *</label>
+                  <input
+                    type="text"
+                    value={entryForm.Team}
+                    onChange={(e) => setEntryForm({...entryForm, Team: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Team name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Word *</label>
+                  <input
+                    type="text"
+                    value={entryForm.Word}
+                    onChange={(e) => setEntryForm({...entryForm, Word: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Word"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Pronunciation</label>
+                  <input
+                    type="text"
+                    value={entryForm.Pronunciation}
+                    onChange={(e) => setEntryForm({...entryForm, Pronunciation: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Pronunciation"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Alternative Pronunciation</label>
+                  <input
+                    type="text"
+                    value={entryForm.AlternativePronunciation}
+                    onChange={(e) => setEntryForm({...entryForm, AlternativePronunciation: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Alternative pronunciation"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Word Origin</label>
+                  <input
+                    type="text"
+                    value={entryForm.WordOrigin}
+                    onChange={(e) => setEntryForm({...entryForm, WordOrigin: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Word origin"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Meaning</label>
+                  <textarea
+                    value={entryForm.Meaning}
+                    onChange={(e) => setEntryForm({...entryForm, Meaning: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Meaning"
+                    rows={3}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Word in Context</label>
+                  <textarea
+                    value={entryForm.WordInContext}
+                    onChange={(e) => setEntryForm({...entryForm, WordInContext: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Word in context"
+                    rows={3}
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={editingEntry ? handleEditEntry : handleAddEntry}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  {editingEntry ? 'Update' : 'Add'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAddEntryModal(false);
+                    setEditingEntry(null);
+                    setEntryForm({
+                      Team: '',
+                      Word: '',
+                      Pronunciation: '',
+                      AlternativePronunciation: '',
+                      WordOrigin: '',
+                      Meaning: '',
+                      WordInContext: ''
+                    });
+                  }}
+                  className="flex-1 bg-slate-300 hover:bg-slate-400 text-slate-800 px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </>
+        )}
 
       </div>
     </div>

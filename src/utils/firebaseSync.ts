@@ -80,6 +80,16 @@ class FirebaseSyncManager {
           const message = messages[key];
           
           if (message && message.data) {
+            const now = Date.now();
+            const messageTimestamp = (typeof message.timestamp === 'number' ? message.timestamp : null) 
+              || (typeof message.data.sentAt === 'number' ? message.data.sentAt : null);
+            const STALE_LIMIT_MS = 5 * 60 * 1000; // 5 minutes max age for replayed messages
+            if (messageTimestamp && now - messageTimestamp > STALE_LIMIT_MS) {
+              console.warn('Firebase: Skipping stale message older than 5 minutes:', key, message.data.type);
+              this.lastProcessedKey = key;
+              return;
+            }
+
             // Create a signature to prevent duplicate processing
             // Use message type + key data to create unique signature
             const signature = this.createMessageSignature(message.data, key);

@@ -1,5 +1,6 @@
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { getDatabase, type Database } from 'firebase/database';
+import { getFirestore, type Firestore } from 'firebase/firestore';
 
 // Firebase configuration
 // Values from environment variables, with fallback to your configured values
@@ -16,13 +17,15 @@ const firebaseConfig = {
 // Initialize Firebase
 let app: FirebaseApp | null = null;
 let database: Database | null = null;
+let firestore: Firestore | null = null;
 
 try {
   // Check if Firebase config is available
   if (firebaseConfig.apiKey && firebaseConfig.databaseURL) {
     app = initializeApp(firebaseConfig);
     database = getDatabase(app);
-    console.log('Firebase initialized successfully');
+    firestore = getFirestore(app);
+    console.log('Firebase initialized successfully (Realtime DB + Firestore)');
   } else {
     console.warn('Firebase config not found. Using BroadcastChannel only for same-device sync.');
   }
@@ -31,5 +34,5 @@ try {
   console.warn('Falling back to BroadcastChannel only for same-device sync.');
 }
 
-export { app, database, firebaseConfig };
+export { app, database, firestore, firebaseConfig };
 
