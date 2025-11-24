@@ -182,11 +182,11 @@ export const ViewPage: React.FC = () => {
     isInitializedRef.current = false;
     
     // Mark as initialized after a delay to avoid processing stale messages on mount
-    // Increased delay to ensure state reset completes first
+    // Increased delay to ensure state reset completes first and Firebase sync is ready
     const initTimeout = setTimeout(() => {
       isInitializedRef.current = true;
       console.log('ViewPage: Initialized, will now process messages');
-    }, 1000); // Increased to 1000ms for maximum reliability
+    }, 1500); // Increased to 1500ms to ensure Firebase initial load completes
     
     const cleanup = broadcastManager.listen((message: QuizMessage) => {
       console.log('ViewPage: Received message:', message.type, message);
@@ -198,12 +198,34 @@ export const ViewPage: React.FC = () => {
         return;
       }
       
-      // CRITICAL: Ignore ALL 'end' and 'control: end' messages if there's no pendingWord
-      // This prevents showing "Timer Ended" without a word
-      if ((message.type === 'end' || (message.type === 'control' && message.control?.action === 'end'))) {
-        // Additional check: don't process end messages if there's no pending word
-        if (!pendingWord && !message.data?.word) {
-          console.log('ViewPage: Ignoring end message - no word to display');
+      // CRITICAL: Ignore ALL 'end' messages if timer was never running
+      // This prevents stale end messages from showing "Timer Ended" when page first loads
+      if (message.type === 'end') {
+        // Only process end messages if:
+        // 1. Timer was actually running (wasRunningRef.current was true), OR
+        // 2. We have a pending word (meaning timer was active), OR
+        // 3. The message has a word AND we're currently running/paused (active timer)
+        const hasActiveTimer = wasRunningRef.current || isRunning || isPaused;
+        const hasWord = pendingWord || message.data?.word;
+        
+        if (!hasActiveTimer && !hasWord) {
+          console.log('ViewPage: Ignoring stale end message - timer was never running and no word');
+          return;
+        }
+        
+        // Additional safety: if timer was never running, ignore end messages even if they have a word
+        // This prevents stale end messages from previous sessions
+        if (!wasRunningRef.current && !isRunning && !isPaused) {
+          console.log('ViewPage: Ignoring end message - timer was never running in this session');
+          return;
+        }
+      }
+      
+      // CRITICAL: Ignore 'control: end' messages if timer was never running
+      if (message.type === 'control' && message.control?.action === 'end') {
+        const hasActiveTimer = wasRunningRef.current || isRunning || isPaused;
+        if (!hasActiveTimer) {
+          console.log('ViewPage: Ignoring control end message - timer was never running');
           return;
         }
       }
@@ -319,6 +341,13 @@ export const ViewPage: React.FC = () => {
             }
           } else if (message.control?.action === 'end') {
             console.log('ViewPage: Received control end message');
+            // CRITICAL: Double-check that timer was actually running before processing end
+            // This prevents stale control end messages from previous sessions
+            if (!wasRunningRef.current && !isRunning && !isPaused) {
+              console.log('ViewPage: Ignoring control end message - timer was never running in this session');
+              break;
+            }
+            
             wasRunningRef.current = false;
             // CRITICAL: Check pending flag, state, and ref to handle out-of-order messages
             // If we're expecting a judge result or already have one, don't process 'end' message
@@ -345,6 +374,13 @@ export const ViewPage: React.FC = () => {
           }
           break;
         case 'end':
+          // CRITICAL: Double-check that timer was actually running before processing end
+          // This prevents stale end messages from previous sessions
+          if (!wasRunningRef.current && !isRunning && !isPaused) {
+            console.log('ViewPage: Ignoring end message - timer was never running in this session');
+            break;
+          }
+          
           wasRunningRef.current = false;
           // CRITICAL: Check pending flag, state, and ref to handle out-of-order messages
           // If we're expecting a judge result or already have one, don't process 'end' message
@@ -557,7 +593,7 @@ export const ViewPage: React.FC = () => {
                   
                   // Ensure video is loading
                   if (video.readyState === 0) {
-                    video.load();
+                  video.load();
                   }
                 }
               } else if (message.videoData?.action === 'pause') {

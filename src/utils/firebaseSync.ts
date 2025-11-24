@@ -59,7 +59,7 @@ class FirebaseSyncManager {
           // On initial load, only process the latest message to avoid reprocessing old messages
           // This prevents showing stale data when a page loads
           if (messageKeys.length > 0) {
-            const latestKey = messageKeys[messageKeys.length - 1];
+        const latestKey = messageKeys[messageKeys.length - 1];
             keysToProcess = [latestKey];
             // Set lastProcessedKey to the latest key so we only process new messages going forward
             this.lastProcessedKey = latestKey;
@@ -98,15 +98,15 @@ class FirebaseSyncManager {
             
             console.log('Firebase: Processing message:', message.data.type, 'key:', key);
             
-            // Notify all listeners
-            this.listeners.forEach(listener => {
-              try {
+          // Notify all listeners
+          this.listeners.forEach(listener => {
+            try {
                 listener(message.data);
-              } catch (error) {
-                console.error('Error in Firebase message listener:', error);
-              }
-            });
-          }
+            } catch (error) {
+              console.error('Error in Firebase message listener:', error);
+            }
+          });
+        }
         });
       }
     }, (error: Error) => {

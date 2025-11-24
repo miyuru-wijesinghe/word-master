@@ -381,6 +381,12 @@ export const ActionPage: React.FC = () => {
       setTimeLeft(60);
       setCurrentStudent('');
       setCurrentWord('');
+      
+      // Clear any stale state by sending a clear message
+      // This ensures all screens reset to default state when new Excel is uploaded
+      broadcastManager.send({
+        type: 'clear'
+      });
     } catch (error) {
       alert(`Error parsing Excel file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
