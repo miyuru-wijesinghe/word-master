@@ -8,7 +8,6 @@ export interface QuizMessage {
     timeLeft: number;
     isRunning: boolean;
     duration?: number;
-    endsAt?: number;
   };
   speechData?: {
     timeLeft: number;
@@ -35,7 +34,6 @@ export interface QuizMessage {
     typedWord: string;
     isCorrect: boolean;
   };
-  sentAt?: number;
 }
 
 class BroadcastManager {
@@ -74,14 +72,10 @@ class BroadcastManager {
   }
 
   send(message: QuizMessage) {
-    const timestampedMessage: QuizMessage = {
-      ...message,
-      sentAt: message.sentAt ?? Date.now()
-    };
-    console.log('BroadcastManager.send called with:', timestampedMessage);
+    console.log('BroadcastManager.send called with:', message);
     // Send via BroadcastChannel for same-device sync (fast, immediate)
     try {
-      this.channel.postMessage(timestampedMessage);
+    this.channel.postMessage(message);
       console.log('Message posted to BroadcastChannel');
     } catch (error) {
       console.error('Error posting to BroadcastChannel:', error);
@@ -89,7 +83,7 @@ class BroadcastManager {
     
     // Also send via Firebase for cross-device sync
     if (firebaseSyncManager.isFirebaseEnabled()) {
-      firebaseSyncManager.send(timestampedMessage).catch(error => {
+      firebaseSyncManager.send(message).catch(error => {
         console.error('Firebase send error:', error);
       });
     }

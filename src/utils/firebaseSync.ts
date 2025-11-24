@@ -78,7 +78,7 @@ class FirebaseSyncManager {
         // Process messages in order
         keysToProcess.forEach(key => {
           const message = messages[key];
-          
+        
           if (message && message.data) {
             const now = Date.now();
             const messageTimestamp = (typeof message.timestamp === 'number' ? message.timestamp : null) 

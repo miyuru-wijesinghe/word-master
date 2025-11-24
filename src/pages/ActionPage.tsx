@@ -438,53 +438,64 @@ export const ActionPage: React.FC = () => {
         const { action, addSeconds } = message.control;
         
         switch (action) {
-          case 'start':
-            // Reset judge result flag when starting new timer
+          case 'start': {
             judgeResultReceivedRef.current = false;
-            // Use functional update to get latest selectedRows
             setSelectedRows(currentSelected => {
-              if (currentSelected.length > 0) {
-                // Use the last selected row
-                const lastSelectedIndex = currentSelected[currentSelected.length - 1];
-                const selectedData = quizData[lastSelectedIndex];
-                
-                // Get duration from control message or default to 60
-                const duration = message.control?.duration || 60;
-                
-                setCurrentStudent(''); // No longer using student name
-                setCurrentWord(selectedData.Word);
-                setStartedRow(lastSelectedIndex);
-                updateTimerMetadata(duration);
-                setIsRunning(true);
-                setIsPaused(false);
-                lastBeepRef.current = -1; // Reset beep tracking when timer starts
-                
-                // Validate data before sending
-                const validSelectedEntries = currentSelected
-                  .filter(i => i >= 0 && i < quizData.length && quizData[i] && quizData[i].Word)
-                  .map(i => ({
-                    word: quizData[i].Word,
-                    team: quizData[i].Team || ''
-                  }));
-                
-                const startMessage: QuizMessage = {
-                  type: 'update',
-                  data: {
-                    student: '',
-                    word: selectedData.Word,
-                    timeLeft: duration,
-                    isRunning: true,
-                    duration,
-                    endsAt: timerEndTimestampRef.current || undefined
-                  },
-                  selectedEntries: validSelectedEntries
-                };
-                broadcastManager.send(startMessage);
-                console.log('ActionPage: Sent start message:', { word: selectedData.Word, entries: validSelectedEntries });
+              if (currentSelected.length === 0) {
+                console.warn('Control start received but no rows are selected');
+                return currentSelected;
               }
+
+              const quizSnapshot = quizDataRef.current;
+              if (!quizSnapshot || quizSnapshot.length === 0) {
+                console.warn('Control start received but quiz data is empty');
+                return currentSelected;
+              }
+
+              const lastSelectedIndex = currentSelected[currentSelected.length - 1];
+              const selectedData = quizSnapshot[lastSelectedIndex];
+
+              if (!selectedData) {
+                console.warn('Control start received with invalid selection index', lastSelectedIndex);
+                return currentSelected;
+              }
+
+              const duration = message.control?.duration || 60;
+
+              setCurrentStudent('');
+              setCurrentWord(selectedData.Word);
+              setStartedRow(lastSelectedIndex);
+              updateTimerMetadata(duration);
+              setIsRunning(true);
+              setIsPaused(false);
+              lastBeepRef.current = -1;
+
+              const validSelectedEntries = currentSelected
+                .filter(i => i >= 0 && i < quizSnapshot.length && quizSnapshot[i] && quizSnapshot[i].Word)
+                .map(i => ({
+                  word: quizSnapshot[i].Word,
+                  team: quizSnapshot[i].Team || ''
+                }));
+
+              const startMessage: QuizMessage = {
+                type: 'update',
+                data: {
+                  student: '',
+                  word: selectedData.Word,
+                  timeLeft: duration,
+                  isRunning: true,
+                  duration,
+                  endsAt: timerEndTimestampRef.current || undefined
+                },
+                selectedEntries: validSelectedEntries
+              };
+              broadcastManager.send(startMessage);
+              console.log('ActionPage: Sent start message:', { word: selectedData.Word, entries: validSelectedEntries });
+
               return currentSelected;
             });
             break;
+          }
           case 'pause':
             // Toggle pause state - avoid nested setState
             const newPaused = !isPausedRef.current;
@@ -545,7 +556,13 @@ export const ActionPage: React.FC = () => {
             isPausedRef.current = false;
             
             // Get current word before clearing it - use refs to ensure we get the latest value
-            const wordToShow = currentWordRef.current || (startedRow !== null && quizDataRef.current[startedRow] ? quizDataRef.current[startedRow].Word : '');
+            const activeStartedRow = startedRowRef.current;
+            const quizSnapshot = quizDataRef.current;
+            const wordToShow =
+              currentWordRef.current ||
+              (activeStartedRow !== null && quizSnapshot && quizSnapshot[activeStartedRow]
+                ? quizSnapshot[activeStartedRow].Word
+                : '');
             
             // Stop timer immediately - set states first
             setIsRunning(false);
@@ -559,7 +576,7 @@ export const ActionPage: React.FC = () => {
             clearTimerMetadata();
             
             // Broadcast end message with word included - validate data
-            const endQuizData = quizDataRef.current;
+            const endQuizData = quizSnapshot;
             const endSelectedRows = selectedRowsRef.current;
             const endValidEntries = endQuizData && endQuizData.length > 0 && wordToShow
               ? endSelectedRows
@@ -585,34 +602,36 @@ export const ActionPage: React.FC = () => {
             console.log('ActionPage: Timer stopped and end message broadcasted:', { word: wordToShow, entries: endValidEntries });
             break;
           case 'addTime':
-            if (addSeconds && (isRunning || isPaused)) {
-              const newTime = Math.min(timeLeft + addSeconds, 3600); // Max 1 hour
+            if (addSeconds && (isRunningRef.current || isPausedRef.current)) {
+              const baseTime = timeLeftRef.current || 0;
+              const newTime = Math.min(baseTime + addSeconds, 3600);
               setTimeLeft(newTime);
               timeLeftRef.current = newTime;
               pausedTimeLeftRef.current = newTime;
               if (timerEndTimestampRef.current) {
                 timerEndTimestampRef.current += addSeconds * 1000;
-              } else if (isRunning) {
+              } else if (isRunningRef.current) {
                 timerEndTimestampRef.current = Date.now() + newTime * 1000;
               }
               
-              // Broadcast updated time - validate data
-              const addTimeValidEntries = quizData && quizData.length > 0
-                ? selectedRows
-                    .filter(i => i >= 0 && i < quizData.length && quizData[i] && quizData[i].Word)
+              const quizSnapshot = quizDataRef.current;
+              const selectedSnapshot = selectedRowsRef.current;
+              const addTimeValidEntries = quizSnapshot && quizSnapshot.length > 0 && selectedSnapshot.length > 0
+                ? selectedSnapshot
+                    .filter(i => i >= 0 && i < quizSnapshot.length && quizSnapshot[i] && quizSnapshot[i].Word)
                     .map(i => ({
-                      word: quizData[i].Word,
-                      team: quizData[i].Team || ''
+                      word: quizSnapshot[i].Word,
+                      team: quizSnapshot[i].Team || ''
                     }))
                 : [];
               
               const updateMessage: QuizMessage = {
                 type: 'update',
                 data: {
-                  student: currentStudent || '',
-                  word: currentWord || '',
+                  student: currentStudentRef.current || '',
+                  word: currentWordRef.current || '',
                   timeLeft: newTime,
-                  isRunning: isRunning,
+                  isRunning: isRunningRef.current,
                   endsAt: timerEndTimestampRef.current || undefined
                 },
                 selectedEntries: addTimeValidEntries
@@ -630,7 +649,7 @@ export const ActionPage: React.FC = () => {
         clearTimeout(judgeAlertTimeoutRef.current);
       }
     };
-  }, [selectedRows, quizData, currentStudent, currentWord, isRunning, isPaused, timeLeft]);
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -910,6 +929,7 @@ export const ActionPage: React.FC = () => {
   const currentStudentRef = useRef(currentStudent);
   const selectedRowsRef = useRef(selectedRows);
   const quizDataRef = useRef(quizData);
+  const startedRowRef = useRef<number | null>(startedRow);
   const isRunningRef = useRef(isRunning);
   const isPausedRef = useRef(isPaused);
   const timeLeftRef = useRef(timeLeft);
@@ -944,6 +964,10 @@ export const ActionPage: React.FC = () => {
   useEffect(() => {
     quizDataRef.current = quizData;
   }, [quizData]);
+
+  useEffect(() => {
+    startedRowRef.current = startedRow;
+  }, [startedRow]);
 
   useEffect(() => {
     isRunningRef.current = isRunning;

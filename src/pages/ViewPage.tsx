@@ -6,6 +6,7 @@ import { soundManager } from '../utils/soundManager';
 
 const RESULT_DELAY_MS = 5000;
 const RESULT_DISPLAY_MS = 10000;
+const STALE_MESSAGE_MAX_MS = 15000;
 
 export const ViewPage: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState(60);
@@ -28,6 +29,7 @@ export const ViewPage: React.FC = () => {
   const judgeResultRef = useRef<QuizMessage['judgeData'] | null>(null);
   // Track if we're expecting a judge result - prevents control 'end' from clearing it
   const pendingJudgeResultRef = useRef<boolean>(false);
+  const isExpectingJudgeRef = useRef<boolean>(false);
   // Track if page has been initialized - prevents processing stale messages on mount
   const isInitializedRef = useRef<boolean>(false);
   const timerEndTimestampRef = useRef<number | null>(null);
@@ -69,6 +71,7 @@ export const ViewPage: React.FC = () => {
     clearResultTimers();
     stopCountdown();
     timerEndTimestampRef.current = null;
+    isExpectingJudgeRef.current = false;
     
     // CRITICAL: Only set timerEnded if there's actually a word to show
     // This prevents "Timer Ended" screen from appearing when there's no word
@@ -230,6 +233,19 @@ export const ViewPage: React.FC = () => {
         console.log('ViewPage: Ignoring message received before initialization:', message.type);
         return;
       }
+
+      const sentAt = typeof message.sentAt === 'number' ? message.sentAt : null;
+      if (sentAt) {
+        const age = Date.now() - sentAt;
+        if (age > STALE_MESSAGE_MAX_MS) {
+          console.log('ViewPage: Ignoring stale message older than threshold:', {
+            type: message.type,
+            age,
+            sentAt
+          });
+          return;
+        }
+      }
       
       // CRITICAL: Ignore ALL 'end' messages if timer was never running
       // This prevents stale end messages from showing "Timer Ended" when page first loads
@@ -269,6 +285,18 @@ export const ViewPage: React.FC = () => {
           // Allow update messages when timer is starting (isRunning transitions from false to true)
           // This ensures counter appears when restart is pressed
           const isTimerStarting = message.data?.isRunning && !wasRunningRef.current;
+          const hasActiveContext =
+            isExpectingJudgeRef.current ||
+            wasRunningRef.current ||
+            isRunning ||
+            isPaused;
+          if (message.data?.isRunning && !hasActiveContext && !isTimerStarting) {
+            console.log('ViewPage: Ignoring running update with no active context', {
+              word: message.data.word,
+              sentAt
+            });
+            break;
+          }
           if ((judgeResult || judgeResultRef.current || pendingJudgeResultRef.current) && !isTimerStarting) {
             console.log('ViewPage: Ignoring update message - judge result exists or pending and timer not starting');
             break;
@@ -291,9 +319,11 @@ export const ViewPage: React.FC = () => {
             timerEndTimestampRef.current = message.data.endsAt;
             effectiveTimeLeft = Math.max(0, Math.floor((message.data.endsAt - Date.now()) / 1000));
             startCountdown();
+            isExpectingJudgeRef.current = true;
           } else if (message.data && !message.data.isRunning) {
             timerEndTimestampRef.current = null;
             stopCountdown();
+            isExpectingJudgeRef.current = false;
           }
           
           // Only update ViewPage if timer is actually running (isRunning === true)
@@ -371,6 +401,7 @@ export const ViewPage: React.FC = () => {
             setIsRunning(false); // Will be set to true by update message
             setIsPaused(false);
             wasRunningRef.current = false;
+            isExpectingJudgeRef.current = true;
             console.log('ViewPage: Prepared for timer start, waiting for update message');
           } else if (message.control?.action === 'pause') {
             console.log('ViewPage: Received control pause message', { isRunning, isPaused });
@@ -424,6 +455,7 @@ export const ViewPage: React.FC = () => {
             pendingJudgeResultRef.current = false;
             setTimeLeft(60);
             lastBeepRef.current = -1;
+            isExpectingJudgeRef.current = false;
           }
           break;
         case 'end':
@@ -474,6 +506,7 @@ export const ViewPage: React.FC = () => {
             judgeResultRef.current = null;
             pendingJudgeResultRef.current = false;
             setTimeLeft(60);
+            isExpectingJudgeRef.current = false;
           }
           lastBeepRef.current = -1;
           break;
@@ -507,6 +540,7 @@ export const ViewPage: React.FC = () => {
           pendingJudgeResultRef.current = false;
           wasRunningRef.current = false;
           lastBeepRef.current = -1;
+          isExpectingJudgeRef.current = false;
           break;
         case 'video':
           if (message.videoData) {
@@ -564,6 +598,7 @@ export const ViewPage: React.FC = () => {
                 if (incomingMediaType === 'image') {
                   setIsImageVisible(false);
                 }
+                isExpectingJudgeRef.current = false;
               }
             }
             
@@ -585,6 +620,8 @@ export const ViewPage: React.FC = () => {
                 setVideoUrl('');
                 setDisplayMode('timer');
                 setMediaType('video');
+                isExpectingJudgeRef.current = false;
+                isExpectingJudgeRef.current = false;
               }
               break;
             }
@@ -680,6 +717,16 @@ export const ViewPage: React.FC = () => {
           break;
         case 'judge':
           if (message.judgeData) {
+            if (
+              !isExpectingJudgeRef.current &&
+              !pendingJudgeResultRef.current &&
+              !wasRunningRef.current &&
+              !isRunning &&
+              !isPaused
+            ) {
+              console.log('ViewPage: Ignoring judge result - no active round or expectation');
+              break;
+            }
             console.log('ViewPage: Received judge result:', message.judgeData);
             console.log('ViewPage: Typed word received:', {
               typedWord: message.judgeData.typedWord,
@@ -690,6 +737,7 @@ export const ViewPage: React.FC = () => {
             });
             // CRITICAL: Set pending flag FIRST to protect against out-of-order messages
             pendingJudgeResultRef.current = true;
+            isExpectingJudgeRef.current = false;
             
             // Ensure typedWord is always a string (even if empty)
             const normalizedJudgeData = {
@@ -942,7 +990,12 @@ export const ViewPage: React.FC = () => {
         ) : (
           <div className="text-center">
             {/* <div className="text-8xl mb-8">🎯</div> */}
-            <h2 className="text-6xl font-bold text-slate-400 mb-4">🐝Next Word Loading... Get Ready to Spell!</h2>
+            <h2
+              data-testid="view-ready-message"
+              className="text-6xl	font-bold text-slate-400 mb-4"
+            >
+              🐝Next Word Loading... Get Ready to Spell!
+            </h2>
           </div>
         )}
       </div>

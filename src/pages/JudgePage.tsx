@@ -21,6 +21,8 @@ export const JudgePage: React.FC = () => {
   const lastSubmittedSignatureRef = useRef<string>('');
   const autoSubmitPendingRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const timerEndTimestampRef = useRef<number | null>(null);
+  const countdownIntervalRef = useRef<number | null>(null);
 
   useEffect(() => {
     typedWordRef.current = typedWord;
@@ -34,9 +36,44 @@ export const JudgePage: React.FC = () => {
     autoSubmitPendingRef.current = autoSubmitPending;
   }, [autoSubmitPending]);
 
+  const stopCountdown = () => {
+    if (countdownIntervalRef.current !== null) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+  };
+
+  const startCountdown = () => {
+    stopCountdown();
+    if (!timerEndTimestampRef.current) {
+      return;
+    }
+    countdownIntervalRef.current = window.setInterval(() => {
+      if (!timerEndTimestampRef.current) {
+        stopCountdown();
+        return;
+      }
+      const remaining = Math.max(0, Math.floor((timerEndTimestampRef.current - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        stopCountdown();
+        timerEndTimestampRef.current = null;
+      }
+    }, 250);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopCountdown();
+    };
+  }, []);
+
   const resetJudgeState = () => {
+    stopCountdown();
+    timerEndTimestampRef.current = null;
     setCurrentWord('');
     setTypedWord('');
+    typedWordRef.current = '';
     setTimeLeft(60);
     setStatus('waiting');
     setAutoSubmitPending(false);
@@ -110,12 +147,12 @@ export const JudgePage: React.FC = () => {
     // Always send judge result - this is the main message that displays on view screen
     // displayTyped is already guaranteed to be a string from above
     const judgeMessage: QuizMessage = {
-        type: 'judge',
-        judgeData: {
-          actualWord: resolvedWord,
+      type: 'judge',
+      judgeData: {
+        actualWord: resolvedWord,
         typedWord: displayTyped, // Already a string, guaranteed above
-          isCorrect
-        }
+        isCorrect
+      }
     };
     
     console.log('Sending judge result:', JSON.stringify(judgeMessage, null, 2));
@@ -154,13 +191,17 @@ export const JudgePage: React.FC = () => {
           }
         });
       }, 500); // Increased from 200ms to 500ms for better reliability
-      }
+    }
 
     // Clear state after sending messages
-      setStatus('waiting');
-      setTimeLeft(0);
-      setCurrentWord('');
-      setTypedWord('');
+    stopCountdown();
+    timerEndTimestampRef.current = null;
+    setStatus('waiting');
+    setTimeLeft(0);
+    setCurrentWord('');
+    currentWordRef.current = '';
+    setTypedWord('');
+    typedWordRef.current = '';
 
     setAutoSubmitPending(false);
   };
@@ -168,40 +209,54 @@ export const JudgePage: React.FC = () => {
   useEffect(() => {
     const cleanup = broadcastManager.listen((message: QuizMessage) => {
       switch (message.type) {
-        case 'update':
-          if (message.data && message.data.isRunning) {
-            const incomingWord = message.data.word;
-            setTimeLeft(message.data.timeLeft);
+        case 'update': {
+          if (!message.data) break;
+          const incomingWord = message.data.word;
+          const incomingTimeLeft = typeof message.data.timeLeft === 'number' ? message.data.timeLeft : 60;
+          const isTimerRunning = !!message.data.isRunning;
+
+          if (incomingWord && incomingWord !== currentWordRef.current) {
+            setCurrentWord(incomingWord);
+            currentWordRef.current = incomingWord;
+            setTypedWord('');
+            typedWordRef.current = '';
+          }
+
+          if (isTimerRunning) {
             setStatus('running');
             setAutoSubmitPending(true);
-
-            if (incomingWord && incomingWord !== currentWordRef.current) {
-              setCurrentWord(incomingWord);
-              setTypedWord('');
-            }
+            autoSubmitPendingRef.current = true;
+            const targetEndsAt = message.data.endsAt ?? (Date.now() + incomingTimeLeft * 1000);
+            timerEndTimestampRef.current = targetEndsAt;
+            const effectiveTimeLeft = Math.max(0, Math.floor((targetEndsAt - Date.now()) / 1000));
+            setTimeLeft(effectiveTimeLeft);
+            startCountdown();
+          } else {
+            stopCountdown();
+            timerEndTimestampRef.current = null;
+            setAutoSubmitPending(false);
+            autoSubmitPendingRef.current = false;
+            setStatus('waiting');
+            setTimeLeft(incomingTimeLeft > 0 ? incomingTimeLeft : 60);
           }
           break;
+        }
         case 'pause':
+          stopCountdown();
+          timerEndTimestampRef.current = null;
           if (message.data?.timeLeft) {
             setTimeLeft(message.data.timeLeft);
           }
           setStatus('paused');
+          setAutoSubmitPending(true);
+          autoSubmitPendingRef.current = true;
           break;
         case 'control':
           // Handle control messages directly (e.g., from ManageScreen)
-          if (message.control?.action === 'pause') {
-            console.log('JudgePage: Received control pause message');
-            // Toggle pause state
-            setStatus(prevStatus => {
-              if (prevStatus === 'running') {
-                return 'paused';
-              } else if (prevStatus === 'paused') {
-                return 'running';
-              }
-              return prevStatus;
-            });
-          } else if (message.control?.action === 'end') {
+          if (message.control?.action === 'end') {
             console.log('JudgePage: Received control end message');
+            stopCountdown();
+            timerEndTimestampRef.current = null;
             if (autoSubmitPendingRef.current) {
               // If auto-submit is pending, submit the result
               submitResult(message.data?.word, 'auto');
@@ -214,6 +269,8 @@ export const JudgePage: React.FC = () => {
           }
           break;
         case 'end': {
+          stopCountdown();
+          timerEndTimestampRef.current = null;
           if (autoSubmitPendingRef.current) {
             submitResult(message.data?.word, 'auto');
           } else {

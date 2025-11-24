@@ -93,18 +93,18 @@ export const DataTable: React.FC<DataTableProps> = ({
               </td>
               <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
                 <div className="flex gap-2 items-center">
-                  <button
-                    onClick={() => onSelectRow(index)}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
-                      startedRow === index
-                        ? 'bg-green-600 text-white hover:bg-green-700 shadow-lg transform scale-105'
-                        : selectedRows.includes(index)
-                        ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg transform scale-105'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:shadow-md'
-                    }`}
-                  >
-                    {startedRow === index ? 'Started' : selectedRows.includes(index) ? '✓ Selected' : 'Select'}
-                  </button>
+                <button
+                  onClick={() => onSelectRow(index)}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                    startedRow === index
+                      ? 'bg-green-600 text-white hover:bg-green-700 shadow-lg transform scale-105'
+                      : selectedRows.includes(index)
+                      ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg transform scale-105'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:shadow-md'
+                  }`}
+                >
+                  {startedRow === index ? 'Started' : selectedRows.includes(index) ? '✓ Selected' : 'Select'}
+                </button>
                   {onEdit && (
                     <button
                       onClick={() => onEdit(index)}
