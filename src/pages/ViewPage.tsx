@@ -423,9 +423,18 @@ export const ViewPage: React.FC = () => {
           lastBeepRef.current = -1;
           break;
         case 'clear':
+          // Only play sound if there was actually something active to clear
+          // This prevents beep when Excel is uploaded (silent reset)
+          const hadActiveContent = pendingWord || isRunning || isPaused || timerEnded || isResultVisible || judgeResult || judgeResultRef.current || videoUrl || displayMode === 'video';
+          
           clearResultTimers();
-          soundManager.ensureAudioContext();
-          soundManager.playWordClearBeep();
+          
+          // Only play sound if there was something to clear
+          if (hadActiveContent) {
+            soundManager.ensureAudioContext();
+            soundManager.playWordClearBeep();
+          }
+          
           setPendingWord('');
           setTimeLeft(60);
           setIsRunning(false);
