@@ -65,6 +65,24 @@ export const ViewPage: React.FC = () => {
       if (timerEndTimestampRef.current && !pendingJudgeResultRef.current) {
         const nextTime = Math.max(0, Math.floor((timerEndTimestampRef.current - Date.now()) / 1000));
         setTimeLeft(nextTime);
+        
+        // Play countdown beep for last 10 seconds
+        if (nextTime <= 10 && nextTime > 0) {
+          // Only beep if we haven't beeped this time yet
+          if (lastBeepRef.current !== nextTime) {
+            soundManager.ensureAudioContext();
+            soundManager.playCountdownBeep();
+            lastBeepRef.current = nextTime;
+          }
+        } else if (nextTime === 50 || nextTime === 40 || nextTime === 30 || nextTime === 20 || nextTime === 10) {
+          // Beep at specific milestones
+          if (lastBeepRef.current !== nextTime) {
+            soundManager.ensureAudioContext();
+            soundManager.playCountdownBeep();
+            lastBeepRef.current = nextTime;
+          }
+        }
+        
         if (nextTime <= 0) {
           stopCountdown();
           timerEndTimestampRef.current = null;
@@ -1084,7 +1102,7 @@ export const ViewPage: React.FC = () => {
           </div>
         )}
       </div>
-      {displayMode === 'timer' && isResultVisible && (
+      {displayMode === 'timer' && (isResultVisible || (judgeResult && pendingWord)) && (
         <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 pb-8 lg:pb-10 overflow-x-hidden">
           <div className="w-full max-w-5xl mx-auto">
           <div
