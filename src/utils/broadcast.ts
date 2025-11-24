@@ -75,15 +75,9 @@ class BroadcastManager {
 
   send(message: QuizMessage) {
     console.log('BroadcastManager.send called with:', message);
-    // Always add sentAt timestamp for stale message filtering
-    const messageWithTimestamp: QuizMessage = {
-      ...message,
-      sentAt: message.sentAt ?? Date.now()
-    };
-    
     // Send via BroadcastChannel for same-device sync (fast, immediate)
     try {
-      this.channel.postMessage(messageWithTimestamp);
+    this.channel.postMessage(message);
       console.log('Message posted to BroadcastChannel');
     } catch (error) {
       console.error('Error posting to BroadcastChannel:', error);
@@ -91,7 +85,7 @@ class BroadcastManager {
     
     // Also send via Firebase for cross-device sync
     if (firebaseSyncManager.isFirebaseEnabled()) {
-      firebaseSyncManager.send(messageWithTimestamp).catch(error => {
+      firebaseSyncManager.send(message).catch(error => {
         console.error('Firebase send error:', error);
       });
     }

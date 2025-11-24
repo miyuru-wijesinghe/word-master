@@ -223,6 +223,8 @@ export const JudgePage: React.FC = () => {
             setStatus('running');
             setAutoSubmitPending(true);
             autoSubmitPendingRef.current = true;
+            // CRITICAL: Always use endsAt from message if available for proper sync
+            // This ensures timer stays in sync across all screens
             const targetEndsAt = message.data.endsAt ?? (Date.now() + incomingTimeLeft * 1000);
             timerEndTimestampRef.current = targetEndsAt;
             const effectiveTimeLeft = Math.max(0, Math.floor((targetEndsAt - Date.now()) / 1000));
@@ -240,9 +242,12 @@ export const JudgePage: React.FC = () => {
         }
         case 'pause':
           stopCountdown();
-          timerEndTimestampRef.current = null;
-          if (message.data?.timeLeft) {
+          // Don't clear timerEndTimestampRef - preserve it for potential resume
+          // But if message has timeLeft, update it
+          if (message.data?.timeLeft !== undefined) {
             setTimeLeft(message.data.timeLeft);
+            // If we have a timerEndTimestampRef, we can calculate the paused time
+            // But for now, just preserve the timeLeft value
           }
           setStatus('paused');
           setAutoSubmitPending(true);

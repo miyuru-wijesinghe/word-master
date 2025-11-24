@@ -13,6 +13,7 @@ export const ViewPage: React.FC = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [timerEnded, setTimerEnded] = useState(false);
+  const [hasActiveTimer, setHasActiveTimer] = useState(false); // Track if timer is active to prevent loading message flash
   const [videoUrl, setVideoUrl] = useState<string>('');
   const [displayMode, setDisplayMode] = useState<'timer' | 'video'>('timer');
   const [mediaType, setMediaType] = useState<'video' | 'image'>('video');
@@ -34,6 +35,9 @@ export const ViewPage: React.FC = () => {
   const isInitializedRef = useRef<boolean>(false);
   const timerEndTimestampRef = useRef<number | null>(null);
   const countdownIntervalRef = useRef<number | null>(null);
+  // Track display state in ref to prevent flashing during state transitions
+  const shouldShowTimerRef = useRef<boolean>(false);
+  const shouldShowResultRef = useRef<boolean>(false);
 
   const clearResultTimers = () => {
     if (resultDelayTimeoutRef.current !== null) {
@@ -77,6 +81,8 @@ export const ViewPage: React.FC = () => {
     // This prevents "Timer Ended" screen from appearing when there's no word
     if (!wordToShow || wordToShow.trim() === '') {
       console.log('ViewPage: startResultWindow called without word, resetting timerEnded');
+      shouldShowTimerRef.current = false;
+      shouldShowResultRef.current = false;
       setTimerEnded(false);
       setIsResultVisible(false);
       setIsRunning(false);
@@ -84,7 +90,11 @@ export const ViewPage: React.FC = () => {
       return;
     }
     
-      setPendingWord(wordToShow);
+    // CRITICAL: Update display refs FIRST to prevent flashing
+    shouldShowTimerRef.current = false;
+    shouldShowResultRef.current = true;
+    
+    setPendingWord(wordToShow);
     setTimerEnded(true);
     setIsRunning(false);
     setIsPaused(false);
@@ -97,6 +107,7 @@ export const ViewPage: React.FC = () => {
       resultHideTimeoutRef.current = window.setTimeout(() => {
         soundManager.ensureAudioContext();
         soundManager.playWordClearBeep();
+        shouldShowResultRef.current = false;
         setIsResultVisible(false);
         setPendingWord('');
         if (!preserveJudgeResult) {
@@ -119,6 +130,7 @@ export const ViewPage: React.FC = () => {
         resultHideTimeoutRef.current = window.setTimeout(() => {
           soundManager.ensureAudioContext();
           soundManager.playWordClearBeep();
+          shouldShowResultRef.current = false;
           setIsResultVisible(false);
           setPendingWord('');
           if (!preserveJudgeResult) {
@@ -172,6 +184,7 @@ export const ViewPage: React.FC = () => {
     setTimerEnded(() => false);
     setIsRunning(() => false);
     setIsPaused(() => false);
+    setHasActiveTimer(() => false); // Reset timer active state
     setIsResultVisible(() => false);
     setPendingWord(() => '');
     setJudgeResult(() => null);
@@ -183,6 +196,8 @@ export const ViewPage: React.FC = () => {
     judgeResultRef.current = null;
     pendingJudgeResultRef.current = false;
     wasRunningRef.current = false;
+    shouldShowTimerRef.current = false;
+    shouldShowResultRef.current = false;
     lastBeepRef.current = -1;
     mediaTypeRef.current = 'video'; // Reset media type ref
     // Clear any existing timers
@@ -254,10 +269,10 @@ export const ViewPage: React.FC = () => {
         // 1. Timer was actually running (wasRunningRef.current was true), OR
         // 2. We have a pending word (meaning timer was active), OR
         // 3. The message has a word AND we're currently running/paused (active timer)
-        const hasActiveTimer = wasRunningRef.current || isRunning || isPaused;
+        const timerWasActive = wasRunningRef.current || isRunning || isPaused;
         const hasWord = pendingWord || message.data?.word;
         
-        if (!hasActiveTimer && !hasWord) {
+        if (!timerWasActive && !hasWord) {
           console.log('ViewPage: Ignoring stale end message - timer was never running and no word');
           return;
         }
@@ -272,8 +287,8 @@ export const ViewPage: React.FC = () => {
       
       // CRITICAL: Ignore 'control: end' messages if timer was never running
       if (message.type === 'control' && message.control?.action === 'end') {
-        const hasActiveTimer = wasRunningRef.current || isRunning || isPaused;
-        if (!hasActiveTimer) {
+        const timerWasActive = wasRunningRef.current || isRunning || isPaused;
+        if (!timerWasActive) {
           console.log('ViewPage: Ignoring control end message - timer was never running');
           return;
         }
@@ -305,6 +320,8 @@ export const ViewPage: React.FC = () => {
           // If timer is starting, clear judge result to allow counter to appear
           if (isTimerStarting) {
             console.log('ViewPage: Timer starting, clearing judge result to show counter');
+            shouldShowTimerRef.current = true;
+            shouldShowResultRef.current = false;
             setJudgeResult(null);
             judgeResultRef.current = null;
             pendingJudgeResultRef.current = false;
@@ -324,6 +341,7 @@ export const ViewPage: React.FC = () => {
             timerEndTimestampRef.current = null;
             stopCountdown();
             isExpectingJudgeRef.current = false;
+            setHasActiveTimer(false); // Reset when timer stops
           }
           
           // Only update ViewPage if timer is actually running (isRunning === true)
@@ -339,9 +357,16 @@ export const ViewPage: React.FC = () => {
               console.log('Timer started - playing start beep');
             }
             
-            setTimeLeft(effectiveTimeLeft);
+            // CRITICAL: Update display refs FIRST to prevent flash during state transitions
+            // This ensures the correct display appears immediately
+            shouldShowTimerRef.current = true;
+            shouldShowResultRef.current = false;
+            
+            // Then update state - React will batch these
             setIsRunning(message.data.isRunning);
             setIsPaused(!message.data.isRunning);
+            setHasActiveTimer(true); // Mark timer as active immediately
+            setTimeLeft(effectiveTimeLeft);
             setTimerEnded(false);
             // Only clear result-related states if we're not showing a result AND no judge result exists
             // Check both state and ref to prevent race conditions
@@ -377,6 +402,7 @@ export const ViewPage: React.FC = () => {
           timerEndTimestampRef.current = null;
           setIsPaused(true);
           setIsRunning(false);
+          setHasActiveTimer(true); // Keep true when paused (timer is still active)
           wasRunningRef.current = false;
           break;
         case 'control':
@@ -497,10 +523,13 @@ export const ViewPage: React.FC = () => {
             startResultWindow(wordToShow);
           } else {
             // No word - reset everything
+            shouldShowTimerRef.current = false;
+            shouldShowResultRef.current = false;
             setTimerEnded(false);
             setIsResultVisible(false);
             setIsRunning(false);
             setIsPaused(false);
+            setHasActiveTimer(false); // Reset timer active state
             setPendingWord('');
             setJudgeResult(null);
             judgeResultRef.current = null;
@@ -525,10 +554,13 @@ export const ViewPage: React.FC = () => {
             soundManager.playWordClearBeep();
           }
           
+          shouldShowTimerRef.current = false;
+          shouldShowResultRef.current = false;
           setPendingWord('');
           setTimeLeft(60);
           setIsRunning(false);
           setIsPaused(false);
+          setHasActiveTimer(false); // Reset timer active state
           setTimerEnded(false);
           setIsResultVisible(false);
           setVideoUrl('');
@@ -797,9 +829,14 @@ export const ViewPage: React.FC = () => {
             setJudgeResult(normalizedJudgeData);
             console.log('ViewPage: Judge result state set with normalized data:', normalizedJudgeData);
             console.log('ViewPage: Judge result typedWord after setting state:', normalizedJudgeData.typedWord);
+            // CRITICAL: Update display refs FIRST to prevent flash
+            shouldShowTimerRef.current = false;
+            shouldShowResultRef.current = true;
+            
             // Stop timer states IMMEDIATELY - this stops the counter from updating
             setIsRunning(false);
             setIsPaused(false);
+            setHasActiveTimer(false); // Reset timer active state when result arrives
             setTimeLeft(0); // Reset timer to 0 to stop display
             setTimerEnded(true);
             wasRunningRef.current = false; // Update ref to prevent timer from restarting
@@ -996,8 +1033,9 @@ export const ViewPage: React.FC = () => {
               Word will appear shortly...
             </p>
           </div>
-        ) : displayMode === 'timer' && (isRunning || isPaused) ? (
+        ) : displayMode === 'timer' && (shouldShowTimerRef.current || (isRunning || isPaused || hasActiveTimer)) && !shouldShowResultRef.current && !isResultVisible ? (
           /* Show ONLY timer when running or paused - word is always hidden during countdown */
+          /* Hide timer when result is visible - use refs to prevent flashing */
           <div className="text-center max-w-4xl mx-auto">
             <div className="mb-8">
               <h2 className="text-5xl font-bold text-purple-400 mb-6">Time Left</h2>
