@@ -18,7 +18,6 @@ export const ActionPage: React.FC = () => {
   const [currentStudent, setCurrentStudent] = useState('');
   const [currentWord, setCurrentWord] = useState('');
   const [judgeResult, setJudgeResult] = useState<{ isCorrect: boolean; actualWord: string; typedWord: string } | null>(null);
-  const [lastJudgeResult, setLastJudgeResult] = useState<{ isCorrect: boolean; actualWord: string; typedWord: string } | null>(null);
   const [showJudgeAlert, setShowJudgeAlert] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const judgeAlertTimeoutRef = useRef<number | null>(null);
@@ -430,7 +429,6 @@ export const ActionPage: React.FC = () => {
         });
         console.log('Control Panel: Setting judge result:', resultData);
         setJudgeResult(resultData);
-        setLastJudgeResult(resultData);
         setShowJudgeAlert(true);
         console.log('Control Panel: Alert should be visible now, typedWord:', typedWord, 'isEmpty:', typedWord === '', 'willDisplay:', typedWord && typedWord.trim() !== '' ? typedWord : '—');
         
@@ -1270,50 +1268,6 @@ export const ActionPage: React.FC = () => {
             >
               ← Back
             </Link>
-          </div>
-        </div>
-
-        {/* Latest Judge Result summary */}
-        <div className="mb-8">
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-slate-900">Latest Judge Result</h2>
-              {lastJudgeResult && (
-                <span
-                  className={`px-4 py-1 rounded-full text-sm font-semibold ${
-                    lastJudgeResult.isCorrect
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-red-100 text-red-700'
-                  }`}
-                >
-                  {lastJudgeResult.isCorrect ? 'Correct' : 'Incorrect'}
-                </span>
-              )}
-            </div>
-            {lastJudgeResult ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <p className="text-sm font-semibold text-slate-500 mb-1">Correct Word</p>
-                  <p
-                    data-testid="control-latest-correct"
-                    className="text-3xl font-bold text-slate-900 break-words"
-                  >
-                    {lastJudgeResult.actualWord || '—'}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <p className="text-sm font-semibold text-slate-500 mb-1">Spelled Word</p>
-                  <p
-                    data-testid="control-latest-spelled"
-                    className="text-3xl font-bold text-slate-900 break-words"
-                  >
-                    {lastJudgeResult.typedWord?.trim() ? lastJudgeResult.typedWord : '—'}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="text-slate-500 text-lg">Waiting for judge submission…</div>
-            )}
           </div>
         </div>
 

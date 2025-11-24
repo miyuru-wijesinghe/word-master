@@ -109,15 +109,21 @@ export const ViewPage: React.FC = () => {
       resultHideTimeoutRef.current = window.setTimeout(() => {
         soundManager.ensureAudioContext();
         soundManager.playWordClearBeep();
+        // CRITICAL: Reset all timer-related state when result hides to prevent timer from reappearing
         shouldShowResultRef.current = false;
+        shouldShowTimerRef.current = false;
         setIsResultVisible(false);
         setPendingWord('');
+        setIsRunning(false);
+        setIsPaused(false);
+        setHasActiveTimer(false);
+        setTimerEnded(false);
+        setTimeLeft(60); // Reset to default
         if (!preserveJudgeResult) {
         setJudgeResult(null);
           judgeResultRef.current = null;
           pendingJudgeResultRef.current = false; // Reset pending flag
         }
-        setTimerEnded(false);
         resultHideTimeoutRef.current = null;
       }, RESULT_DISPLAY_MS);
     } else {
@@ -132,15 +138,21 @@ export const ViewPage: React.FC = () => {
         resultHideTimeoutRef.current = window.setTimeout(() => {
           soundManager.ensureAudioContext();
           soundManager.playWordClearBeep();
+          // CRITICAL: Reset all timer-related state when result hides to prevent timer from reappearing
           shouldShowResultRef.current = false;
+          shouldShowTimerRef.current = false;
           setIsResultVisible(false);
           setPendingWord('');
+          setIsRunning(false);
+          setIsPaused(false);
+          setHasActiveTimer(false);
+          setTimerEnded(false);
+          setTimeLeft(60); // Reset to default
           if (!preserveJudgeResult) {
             setJudgeResult(null);
             judgeResultRef.current = null;
             pendingJudgeResultRef.current = false; // Reset pending flag
           }
-        setTimerEnded(false);
         resultHideTimeoutRef.current = null;
       }, RESULT_DISPLAY_MS);
     }, RESULT_DELAY_MS);
@@ -345,6 +357,7 @@ export const ViewPage: React.FC = () => {
             stopCountdown();
             isExpectingJudgeRef.current = false;
             setHasActiveTimer(false); // Reset when timer stops
+            startBeepPlayedRef.current = false; // Reset beep flag so it can play again on next start
           }
           
           // Only update ViewPage if timer is actually running (isRunning === true)
@@ -409,6 +422,7 @@ export const ViewPage: React.FC = () => {
           setIsRunning(false);
           setHasActiveTimer(true); // Keep true when paused (timer is still active)
           wasRunningRef.current = false;
+          // Don't reset startBeepPlayedRef on pause - timer is still active, just paused
           break;
         case 'control':
           // Handle control messages directly (e.g., from ManageScreen)
