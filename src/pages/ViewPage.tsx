@@ -1001,38 +1001,41 @@ export const ViewPage: React.FC = () => {
       </div>
       {displayMode === 'timer' && isResultVisible && (
         <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 pb-8 lg:pb-10 overflow-x-hidden">
-          <div className="w-full max-w-7xl mx-auto">
-          <div
+          <div className="w-full max-w-5xl mx-auto">
+            <div
               className={`w-full rounded-3xl border-2 p-4 sm:p-6 lg:p-8 text-center ${
-              judgeResult
-                ? judgeResult.isCorrect
-                  ? 'bg-green-900/40 border-green-500 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
-                  : 'bg-red-900/40 border-red-500 shadow-[0_0_30px_rgba(248,113,113,0.3)]'
-                : 'bg-slate-900/40 border-white/10'
-            }`}
-          >
+                judgeResult
+                  ? judgeResult.isCorrect
+                    ? 'bg-green-900/40 border-green-500 shadow-[0_0_30px_rgba(16,185,129,0.3)]'
+                    : 'bg-red-900/40 border-red-500 shadow-[0_0_30px_rgba(248,113,113,0.3)]'
+                  : 'bg-slate-900/40 border-white/10'
+              }`}
+            >
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4 lg:mb-6">
-              <div className="text-left">
+                <div className="text-left">
                   <h3 className="text-2xl sm:text-3xl lg:text-4xl font-bold">Latest Result</h3>
+                  {judgeResult && (
+                    <p
+                      className={`text-xl sm:text-2xl lg:text-3xl font-semibold mt-2 ${
+                        judgeResult.isCorrect ? 'text-green-300' : 'text-red-300'
+                      }`}
+                    >
+                      {judgeResult.isCorrect ? 'Correct spelling!' : 'Incorrect spelling'}
+                    </p>
+                  )}
+                </div>
                 {judgeResult && (
-                    <p className={`text-xl sm:text-2xl lg:text-3xl font-semibold mt-2 ${judgeResult.isCorrect ? 'text-green-300' : 'text-red-300'}`}>
-                    {judgeResult.isCorrect ? 'Your word is correct!' : 'Your word is incorrect.'}
-                  </p>
+                  <span
+                    className={`px-4 sm:px-6 py-2 rounded-full text-lg sm:text-xl lg:text-2xl font-semibold whitespace-nowrap ${
+                      judgeResult.isCorrect ? 'bg-green-500 text-slate-900' : 'bg-red-500 text-white'
+                    }`}
+                  >
+                    {judgeResult.isCorrect ? 'Correct' : 'Incorrect'}
+                  </span>
                 )}
               </div>
-              {judgeResult && (
-                <span
-                    className={`px-4 sm:px-6 py-2 rounded-full text-lg sm:text-xl lg:text-2xl font-semibold whitespace-nowrap ${
-                    judgeResult.isCorrect ? 'bg-green-500 text-slate-900' : 'bg-red-500 text-white'
-                  }`}
-                >
-                  {judgeResult.isCorrect ? 'Correct' : 'Incorrect'}
-                </span>
-              )}
-            </div>
-              <div className="grid gap-4 sm:gap-6 lg:gap-8 md:grid-cols-2 text-left">
               <div
-                  className={`rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl min-w-0 ${
+                className={`rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl text-left ${
                   judgeResult
                     ? judgeResult.isCorrect
                       ? 'bg-gradient-to-br from-emerald-900/70 via-emerald-950 to-slate-950 border-emerald-400/60'
@@ -1040,20 +1043,17 @@ export const ViewPage: React.FC = () => {
                     : 'bg-gradient-to-br from-slate-900 via-slate-950 to-black border-white/10'
                 }`}
               >
-                  <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold uppercase tracking-wider text-slate-200 mb-3">Correct Word</p>
-                  <p className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(255,255,255,0.25)] leading-tight" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', hyphens: 'auto' }}>
+                <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold uppercase tracking-wider text-slate-200 mb-3">
+                  Correct Word
+                </p>
+                <p
+                  data-testid="view-result-correct"
+                  className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(255,255,255,0.25)] leading-tight"
+                  style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', hyphens: 'auto' }}
+                >
                   {pendingWord || judgeResult?.actualWord || ''}
                 </p>
               </div>
-              {judgeResult && (
-                  <div className="rounded-2xl p-4 sm:p-6 lg:p-8 border-2 shadow-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-black border-indigo-400/60 min-w-0">
-                    <p className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold uppercase tracking-wider text-slate-200 mb-3">Spelled Word</p>
-                    <p className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black break-words tracking-tight drop-shadow-[0_0_25px_rgba(129,140,248,0.4)] leading-tight" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', hyphens: 'auto' }}>
-                      {judgeResult.typedWord !== undefined && judgeResult.typedWord !== null && judgeResult.typedWord.trim() !== '' ? judgeResult.typedWord : '—'}
-                  </p>
-                </div>
-              )}
-            </div>
               <p className="mt-4 sm:mt-6 text-slate-300 text-base sm:text-lg lg:text-xl">Result shared from Judge Console</p>
             </div>
           </div>
