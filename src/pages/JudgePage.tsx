@@ -23,6 +23,7 @@ export const JudgePage: React.FC = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const timerEndTimestampRef = useRef<number | null>(null);
   const countdownIntervalRef = useRef<number | null>(null);
+  const lastTimeLeftRef = useRef<number>(-1);
 
   useEffect(() => {
     typedWordRef.current = typedWord;
@@ -41,6 +42,7 @@ export const JudgePage: React.FC = () => {
       clearInterval(countdownIntervalRef.current);
       countdownIntervalRef.current = null;
     }
+    lastTimeLeftRef.current = -1;
   };
 
   const startCountdown = () => {
@@ -54,12 +56,15 @@ export const JudgePage: React.FC = () => {
         return;
       }
       const remaining = Math.max(0, Math.floor((timerEndTimestampRef.current - Date.now()) / 1000));
-      setTimeLeft(remaining);
+      if (remaining !== lastTimeLeftRef.current) {
+        lastTimeLeftRef.current = remaining;
+        setTimeLeft(remaining);
+      }
       if (remaining <= 0) {
         stopCountdown();
         timerEndTimestampRef.current = null;
       }
-    }, 250);
+    }, 100);
   };
 
   useEffect(() => {
@@ -75,6 +80,7 @@ export const JudgePage: React.FC = () => {
     setTypedWord('');
     typedWordRef.current = '';
     setTimeLeft(60);
+    lastTimeLeftRef.current = 60;
     setStatus('waiting');
     setAutoSubmitPending(false);
   };
@@ -195,6 +201,7 @@ export const JudgePage: React.FC = () => {
     timerEndTimestampRef.current = null;
       setStatus('waiting');
       setTimeLeft(0);
+      lastTimeLeftRef.current = 0;
       setCurrentWord('');
     currentWordRef.current = '';
       setTypedWord('');
@@ -228,6 +235,7 @@ export const JudgePage: React.FC = () => {
             const targetEndsAt = message.data.endsAt ?? (Date.now() + incomingTimeLeft * 1000);
             timerEndTimestampRef.current = targetEndsAt;
             const effectiveTimeLeft = Math.max(0, Math.floor((targetEndsAt - Date.now()) / 1000));
+            lastTimeLeftRef.current = effectiveTimeLeft;
             setTimeLeft(effectiveTimeLeft);
             startCountdown();
           } else {
@@ -241,7 +249,9 @@ export const JudgePage: React.FC = () => {
             // Only set to 60 if we're explicitly resetting from a paused/stopped state with a valid timeLeft
             if (status === 'running' || status === 'paused') {
               // Timer was running/paused, now stopped - use incoming timeLeft or keep at 0
-              setTimeLeft(incomingTimeLeft > 0 ? incomingTimeLeft : 0);
+              const newValue = incomingTimeLeft > 0 ? incomingTimeLeft : 0;
+              lastTimeLeftRef.current = newValue;
+              setTimeLeft(newValue);
             } else {
               // No timer was active, don't update timeLeft (keep it at 0 or current value)
               // This prevents showing 1:00 when update messages arrive during idle state
@@ -255,9 +265,11 @@ export const JudgePage: React.FC = () => {
           if (message.data?.endsAt) {
             timerEndTimestampRef.current = message.data.endsAt;
             const effectiveTimeLeft = Math.max(0, Math.floor((message.data.endsAt - Date.now()) / 1000));
+            lastTimeLeftRef.current = effectiveTimeLeft;
             setTimeLeft(effectiveTimeLeft);
           } else if (message.data?.timeLeft !== undefined) {
             // Fallback: if no endsAt, preserve timeLeft value
+            lastTimeLeftRef.current = message.data.timeLeft;
             setTimeLeft(message.data.timeLeft);
           }
           setStatus('paused');
@@ -277,6 +289,7 @@ export const JudgePage: React.FC = () => {
               // Otherwise, just reset to waiting state
               setStatus('waiting');
               setTimeLeft(0);
+              lastTimeLeftRef.current = 0;
             }
             setAutoSubmitPending(false);
           }
@@ -289,6 +302,7 @@ export const JudgePage: React.FC = () => {
           } else {
           setStatus('waiting');
           setTimeLeft(0);
+          lastTimeLeftRef.current = 0;
           }
           setAutoSubmitPending(false);
           break;

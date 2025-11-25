@@ -8,9 +8,8 @@ export interface QuizMessage {
     timeLeft: number;
     isRunning: boolean;
     duration?: number;
-    endsAt?: number; // Timer end timestamp for synchronization
+    endsAt?: number;
   };
-  sentAt?: number; // Timestamp when message was sent (for stale message filtering)
   speechData?: {
     timeLeft: number;
     shouldSpeak: boolean;
@@ -36,6 +35,7 @@ export interface QuizMessage {
     typedWord: string;
     isCorrect: boolean;
   };
+  sentAt?: number;
 }
 
 class BroadcastManager {
@@ -75,14 +75,9 @@ class BroadcastManager {
 
   send(message: QuizMessage) {
     console.log('BroadcastManager.send called with:', message);
-    // Automatically add sentAt timestamp if not present
-    const messageWithTimestamp: QuizMessage = {
-      ...message,
-      sentAt: message.sentAt ?? Date.now()
-    };
     // Send via BroadcastChannel for same-device sync (fast, immediate)
     try {
-    this.channel.postMessage(messageWithTimestamp);
+    this.channel.postMessage(message);
       console.log('Message posted to BroadcastChannel');
     } catch (error) {
       console.error('Error posting to BroadcastChannel:', error);
@@ -90,7 +85,7 @@ class BroadcastManager {
     
     // Also send via Firebase for cross-device sync
     if (firebaseSyncManager.isFirebaseEnabled()) {
-      firebaseSyncManager.send(messageWithTimestamp).catch(error => {
+      firebaseSyncManager.send(message).catch(error => {
         console.error('Firebase send error:', error);
       });
     }
