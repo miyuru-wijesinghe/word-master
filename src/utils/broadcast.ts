@@ -74,6 +74,9 @@ class BroadcastManager {
   }
 
   send(message: QuizMessage) {
+    if (!message.sentAt) {
+      message.sentAt = Date.now();
+    }
     console.log('BroadcastManager.send called with:', message);
     // Send via BroadcastChannel for same-device sync (fast, immediate)
     try {

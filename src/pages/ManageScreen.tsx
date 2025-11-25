@@ -315,15 +315,43 @@ export const ManageScreen: React.FC = () => {
     }
     
     const nextPaused = !isPaused;
+    const safeWord = currentWord || '';
+    const remainingSeconds = Math.max(0, timeLeft);
+    const duration = selectedDuration ?? undefined;
+    let resumeEndsAt: number | undefined;
+    
     setIsPaused(nextPaused);
     setIsRunning(!nextPaused);
     setHasStarted(true);
+    
     if (nextPaused) {
       timerEndTimestampRef.current = null;
       stopLocalCountdown();
+      broadcastManager.send({
+        type: 'pause',
+        data: {
+          student: '',
+          word: safeWord,
+          timeLeft: remainingSeconds,
+          isRunning: false,
+          duration
+        }
+      });
     } else {
-      timerEndTimestampRef.current = Date.now() + timeLeft * 1000;
+      resumeEndsAt = Date.now() + remainingSeconds * 1000;
+      timerEndTimestampRef.current = resumeEndsAt;
       startLocalCountdown();
+      broadcastManager.send({
+        type: 'update',
+        data: {
+          student: '',
+          word: safeWord,
+          timeLeft: remainingSeconds,
+          isRunning: true,
+          duration,
+          endsAt: resumeEndsAt
+        }
+      });
     }
     
     const message: QuizMessage = {
