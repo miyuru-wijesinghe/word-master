@@ -45,14 +45,8 @@ export const ViewPage: React.FC = () => {
   const startBeepPlayedRef = useRef<boolean>(false);
   // Track current word in ref for access in countdown interval
   const currentWordRef = useRef<string>('');
-  // Track most recent result word that was displayed
-  const lastResultWordRef = useRef<string>('');
-  // Track result words that were dismissed (cleared or already shown) to prevent reappearing
-  const dismissedResultWordsRef = useRef<Set<string>>(new Set());
-  // Track whether a result is currently active (visible or in delay window)
-  const isResultCycleActiveRef = useRef<boolean>(false);
-  // Track the word associated with the current active result cycle
-  const activeResultWordRef = useRef<string>('');
+  // Track words that have already been shown and cleared to prevent reappearing
+  const clearedResultWordsRef = useRef<Set<string>>(new Set());
 
   const clearResultTimers = () => {
     if (resultDelayTimeoutRef.current !== null) {
@@ -153,10 +147,16 @@ export const ViewPage: React.FC = () => {
   };
 
   const startResultWindow = (wordToShow?: string, immediate: boolean = false, preserveJudgeResult: boolean = false) => {
-    const normalizedWord = wordToShow?.trim() ?? '';
     // CRITICAL: Prevent multiple calls - if timerEnded is already true and we have the same word, skip
-    if (timerEnded && normalizedWord && pendingWord === normalizedWord && !isResultVisible) {
+    if (timerEnded && pendingWord === wordToShow && !isResultVisible) {
       console.log('ViewPage: startResultWindow already called for this word, skipping duplicate call');
+      return;
+    }
+    
+    // CRITICAL: Prevent showing result for a word that has already been shown and cleared
+    const normalizedWord = wordToShow?.trim() ?? '';
+    if (normalizedWord && clearedResultWordsRef.current.has(normalizedWord)) {
+      console.log('ViewPage: startResultWindow called for already-cleared word, skipping:', normalizedWord);
       return;
     }
     
@@ -167,7 +167,7 @@ export const ViewPage: React.FC = () => {
     
     // CRITICAL: Only set timerEnded if there's actually a word to show
     // This prevents "Timer Ended" screen from appearing when there's no word
-    if (!normalizedWord) {
+    if (!wordToShow || wordToShow.trim() === '') {
       console.log('ViewPage: startResultWindow called without word, resetting timerEnded');
       shouldShowTimerRef.current = false;
       shouldShowResultRef.current = false;
@@ -185,27 +185,8 @@ export const ViewPage: React.FC = () => {
           judgeResultRef.current = null;
         }
       });
-      isResultCycleActiveRef.current = false;
-      activeResultWordRef.current = '';
       return;
     }
-
-    // Prevent showing the same word again if it was recently cleared/dismissed
-    if (dismissedResultWordsRef.current.has(normalizedWord)) {
-      console.log('ViewPage: Skipping startResultWindow - word already dismissed', normalizedWord);
-      return;
-    }
-
-    // Prevent duplicate calls while the same result cycle is still active
-    if (isResultCycleActiveRef.current && lastResultWordRef.current === normalizedWord) {
-      console.log('ViewPage: Result already active for word, ignoring duplicate startResultWindow call', normalizedWord);
-      return;
-    }
-
-    isResultCycleActiveRef.current = true;
-    activeResultWordRef.current = normalizedWord;
-    lastResultWordRef.current = normalizedWord;
-    dismissedResultWordsRef.current.delete(normalizedWord);
     
     // CRITICAL: Update display refs FIRST synchronously to prevent flashing
     shouldShowTimerRef.current = false;
@@ -213,7 +194,7 @@ export const ViewPage: React.FC = () => {
     
     // CRITICAL: Use startTransition to batch all state updates and prevent flashing
     startTransition(() => {
-      setPendingWord(normalizedWord);
+      setPendingWord(wordToShow);
     setTimerEnded(true);
     setIsRunning(false);
     setIsPaused(false);
@@ -226,16 +207,18 @@ export const ViewPage: React.FC = () => {
       }
     });
 
-    const wordForThisResult = normalizedWord;
-
     if (immediate) {
       // Show immediately - no delay
       setIsResultVisible(true);
       console.log('Result window shown immediately, preserveJudgeResult:', preserveJudgeResult);
 
-        resultHideTimeoutRef.current = window.setTimeout(() => {
+      resultHideTimeoutRef.current = window.setTimeout(() => {
         soundManager.ensureAudioContext();
         soundManager.playWordClearBeep();
+        // CRITICAL: Mark this word as cleared to prevent it from reappearing
+        if (wordToShow && wordToShow.trim()) {
+          clearedResultWordsRef.current.add(wordToShow.trim());
+        }
         // CRITICAL: Reset all timer-related state when result hides to prevent timer from reappearing
         shouldShowResultRef.current = false;
         shouldShowTimerRef.current = false;
@@ -251,16 +234,13 @@ export const ViewPage: React.FC = () => {
           judgeResultRef.current = null;
           pendingJudgeResultRef.current = false; // Reset pending flag
         }
-          dismissedResultWordsRef.current.add(wordForThisResult);
-          isResultCycleActiveRef.current = false;
-          activeResultWordRef.current = '';
         resultHideTimeoutRef.current = null;
       }, RESULT_DISPLAY_MS);
     } else {
       // Normal flow with delay
       setIsResultVisible(false);
       console.log('Starting result window delay, preserveJudgeResult:', preserveJudgeResult, 'wordToShow:', wordToShow);
-      resultDelayTimeoutRef.current = window.setTimeout(() => {
+    resultDelayTimeoutRef.current = window.setTimeout(() => {
         console.log('Result delay timeout fired, showing result now');
       setIsResultVisible(true);
       resultDelayTimeoutRef.current = null;
@@ -268,6 +248,10 @@ export const ViewPage: React.FC = () => {
       resultHideTimeoutRef.current = window.setTimeout(() => {
           soundManager.ensureAudioContext();
         soundManager.playWordClearBeep();
+          // CRITICAL: Mark this word as cleared to prevent it from reappearing
+          if (wordToShow && wordToShow.trim()) {
+            clearedResultWordsRef.current.add(wordToShow.trim());
+          }
           // CRITICAL: Reset all timer-related state when result hides to prevent timer from reappearing
           shouldShowResultRef.current = false;
           shouldShowTimerRef.current = false;
@@ -283,9 +267,6 @@ export const ViewPage: React.FC = () => {
             judgeResultRef.current = null;
             pendingJudgeResultRef.current = false; // Reset pending flag
           }
-          dismissedResultWordsRef.current.add(wordForThisResult);
-          isResultCycleActiveRef.current = false;
-          activeResultWordRef.current = '';
         resultHideTimeoutRef.current = null;
       }, RESULT_DISPLAY_MS);
     }, RESULT_DELAY_MS);
@@ -482,6 +463,8 @@ export const ViewPage: React.FC = () => {
           // If timer is starting, clear judge result to allow counter to appear
           if (isTimerStarting) {
             console.log('ViewPage: Timer starting, clearing judge result to show counter');
+            timerEndBeepPlayedRef.current = false; // Allow timer-end beep on new session
+            clearedResultWordsRef.current.clear(); // Clear cleared words set for new round
             // CRITICAL: Update refs synchronously first
             shouldShowTimerRef.current = true;
             shouldShowResultRef.current = false;
@@ -522,13 +505,6 @@ export const ViewPage: React.FC = () => {
             // This ensures the beep only plays once even if message is processed multiple times
             const isFirstStart = !wasRunning && isNowRunning;
             
-            if (isFirstStart) {
-              dismissedResultWordsRef.current.clear();
-              lastResultWordRef.current = '';
-              activeResultWordRef.current = '';
-              isResultCycleActiveRef.current = false;
-            }
-
             // CRITICAL: Play start beep ONLY if this is the first start AND flag not set
             // Set flag FIRST before playing sound to prevent double beep from duplicate messages
             if (isFirstStart && !startBeepPlayedRef.current) {
@@ -623,10 +599,6 @@ export const ViewPage: React.FC = () => {
             setIsPaused(false);
             wasRunningRef.current = false;
             isExpectingJudgeRef.current = true;
-            dismissedResultWordsRef.current.clear();
-            lastResultWordRef.current = '';
-            activeResultWordRef.current = '';
-            isResultCycleActiveRef.current = false;
             console.log('ViewPage: Prepared for timer start, waiting for update message');
           } else if (message.control?.action === 'pause') {
             console.log('ViewPage: Received control pause message', { isRunning, isPaused });
@@ -748,16 +720,6 @@ export const ViewPage: React.FC = () => {
           // Only play sound if there was actually something active to clear
           // This prevents beep when Excel is uploaded (silent reset)
           const hadActiveContent = pendingWord || isRunning || isPaused || timerEnded || isResultVisible || judgeResult || judgeResultRef.current || videoUrl || displayMode === 'video';
-          const clearedResultWord =
-            pendingWord ||
-            activeResultWordRef.current ||
-            lastResultWordRef.current ||
-            currentWordRef.current;
-          if (clearedResultWord) {
-            dismissedResultWordsRef.current.add(clearedResultWord);
-          }
-          isResultCycleActiveRef.current = false;
-          activeResultWordRef.current = '';
           
           clearResultTimers();
           stopCountdown();
