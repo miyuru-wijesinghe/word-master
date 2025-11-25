@@ -35,6 +35,7 @@ export const ViewPage: React.FC = () => {
   const isInitializedRef = useRef<boolean>(false);
   const timerEndTimestampRef = useRef<number | null>(null);
   const countdownIntervalRef = useRef<number | null>(null);
+  const lastUpdateTimeRef = useRef<number>(-1); // Track last time update to prevent excessive re-renders
   // Track display state in ref to prevent flashing during state transitions
   const shouldShowTimerRef = useRef<boolean>(false);
   const shouldShowResultRef = useRef<boolean>(false);
@@ -57,29 +58,49 @@ export const ViewPage: React.FC = () => {
       clearInterval(countdownIntervalRef.current);
       countdownIntervalRef.current = null;
     }
+    lastUpdateTimeRef.current = -1; // Reset when stopping countdown
   };
 
   const startCountdown = () => {
     stopCountdown();
+    lastUpdateTimeRef.current = -1; // Reset when starting new countdown
     countdownIntervalRef.current = window.setInterval(() => {
       if (timerEndTimestampRef.current && !pendingJudgeResultRef.current) {
         const nextTime = Math.max(0, Math.floor((timerEndTimestampRef.current - Date.now()) / 1000));
-        setTimeLeft(nextTime);
         
-        // Play countdown beep for last 10 seconds
-        if (nextTime <= 10 && nextTime > 0) {
-          // Only beep if we haven't beeped this time yet
-          if (lastBeepRef.current !== nextTime) {
-            soundManager.ensureAudioContext();
-            soundManager.playCountdownBeep();
-            lastBeepRef.current = nextTime;
-          }
-        } else if (nextTime === 50 || nextTime === 40 || nextTime === 30 || nextTime === 20 || nextTime === 10) {
-          // Beep at specific milestones
-          if (lastBeepRef.current !== nextTime) {
-            soundManager.ensureAudioContext();
-            soundManager.playCountdownBeep();
-            lastBeepRef.current = nextTime;
+        // CRITICAL: Only update state when time actually changes to prevent excessive re-renders
+        // This prevents freezing by reducing state updates from 4 per second to 1 per second
+        if (nextTime !== lastUpdateTimeRef.current) {
+          // Direct state update - React will batch if needed
+          setTimeLeft(nextTime);
+          lastUpdateTimeRef.current = nextTime;
+          
+          // Play countdown beep for last 10 seconds (non-blocking)
+          if (nextTime <= 10 && nextTime > 0) {
+            if (lastBeepRef.current !== nextTime) {
+              setTimeout(() => {
+                try {
+                  soundManager.ensureAudioContext();
+                  soundManager.playCountdownBeep();
+                } catch (e) {
+                  console.warn('Beep error:', e);
+                }
+              }, 0);
+              lastBeepRef.current = nextTime;
+            }
+          } else if (nextTime === 50 || nextTime === 40 || nextTime === 30 || nextTime === 20 || nextTime === 10) {
+            // Beep at specific milestones (non-blocking)
+            if (lastBeepRef.current !== nextTime) {
+              setTimeout(() => {
+                try {
+                  soundManager.ensureAudioContext();
+                  soundManager.playCountdownBeep();
+                } catch (e) {
+                  console.warn('Beep error:', e);
+                }
+              }, 0);
+              lastBeepRef.current = nextTime;
+            }
           }
         }
         
@@ -232,6 +253,7 @@ export const ViewPage: React.FC = () => {
     shouldShowTimerRef.current = false;
     shouldShowResultRef.current = false;
     lastBeepRef.current = -1;
+    lastUpdateTimeRef.current = -1;
     mediaTypeRef.current = 'video'; // Reset media type ref
     // Clear any existing timers
     clearResultTimers();
@@ -1064,7 +1086,7 @@ export const ViewPage: React.FC = () => {
           )
         ) : displayMode === 'timer' && timerEnded && !isResultVisible && pendingWord ? (
           /* Show waiting message during 5 second delay after timer ends */
-          /* CRITICAL: Only show if pendingWord exists - prevents showing on initial load */
+          /* CRITICAL: Show if pendingWord exists and result is not yet visible - this shows even when judgeResult exists but isResultVisible is false */
           <div className="text-center">
             <div className="text-8xl mb-8">⏳</div>
             <h2 className="text-6xl font-bold text-slate-400 mb-4">Timer Ended</h2>

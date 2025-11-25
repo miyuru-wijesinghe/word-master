@@ -377,7 +377,21 @@ export const ActionPage: React.FC = () => {
   useEffect(() => {
     const unsubscribe = broadcastManager.listen((message: QuizMessage) => {
       // Handle judge results - show alert on control panel and STOP TIMER IMMEDIATELY
+      // CRITICAL: Only process judge results if a round was actually started
+      // This prevents results from appearing automatically without any interaction
       if (message.type === 'judge' && message.judgeData) {
+        // Check if a round was actually started (timer was running or a row was started)
+        const wasRoundActive = isRunningRef.current || startedRowRef.current !== null || currentWordRef.current !== '';
+        
+        if (!wasRoundActive) {
+          console.log('Control Panel: Ignoring judge result - no active round', {
+            isRunning: isRunningRef.current,
+            startedRow: startedRowRef.current,
+            currentWord: currentWordRef.current
+          });
+          return; // Skip processing this message
+        }
+        
         console.log('Control Panel: Received judge result:', message.judgeData);
         console.log('Control Panel: Typed word received:', {
           typedWord: message.judgeData.typedWord,

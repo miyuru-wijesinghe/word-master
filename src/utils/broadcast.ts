@@ -2,15 +2,15 @@ import { firebaseSyncManager } from './firebaseSync';
 
 export interface QuizMessage {
   type: 'update' | 'pause' | 'end' | 'clear' | 'speech' | 'control' | 'video' | 'judge';
-  sentAt?: number; // Timestamp when message was sent (for stale message filtering)
   data?: {
     student: string;
     word: string;
     timeLeft: number;
     isRunning: boolean;
     duration?: number;
-    endsAt?: number; // Timestamp when timer will end
+    endsAt?: number; // Timer end timestamp for synchronization
   };
+  sentAt?: number; // Timestamp when message was sent (for stale message filtering)
   speechData?: {
     timeLeft: number;
     shouldSpeak: boolean;
@@ -75,9 +75,14 @@ class BroadcastManager {
 
   send(message: QuizMessage) {
     console.log('BroadcastManager.send called with:', message);
+    // Automatically add sentAt timestamp if not present
+    const messageWithTimestamp: QuizMessage = {
+      ...message,
+      sentAt: message.sentAt ?? Date.now()
+    };
     // Send via BroadcastChannel for same-device sync (fast, immediate)
     try {
-    this.channel.postMessage(message);
+    this.channel.postMessage(messageWithTimestamp);
       console.log('Message posted to BroadcastChannel');
     } catch (error) {
       console.error('Error posting to BroadcastChannel:', error);
@@ -85,7 +90,7 @@ class BroadcastManager {
     
     // Also send via Firebase for cross-device sync
     if (firebaseSyncManager.isFirebaseEnabled()) {
-      firebaseSyncManager.send(message).catch(error => {
+      firebaseSyncManager.send(messageWithTimestamp).catch(error => {
         console.error('Firebase send error:', error);
       });
     }
