@@ -236,7 +236,16 @@ export const JudgePage: React.FC = () => {
             setAutoSubmitPending(false);
             autoSubmitPendingRef.current = false;
             setStatus('waiting');
-            setTimeLeft(incomingTimeLeft > 0 ? incomingTimeLeft : 60);
+            // CRITICAL: Only update timeLeft if we had an active timer before (status was 'running' or 'paused')
+            // This prevents showing 1:00 when update messages arrive without a timer running
+            // Only set to 60 if we're explicitly resetting from a paused/stopped state with a valid timeLeft
+            if (status === 'running' || status === 'paused') {
+              // Timer was running/paused, now stopped - use incoming timeLeft or keep at 0
+              setTimeLeft(incomingTimeLeft > 0 ? incomingTimeLeft : 0);
+            } else {
+              // No timer was active, don't update timeLeft (keep it at 0 or current value)
+              // This prevents showing 1:00 when update messages arrive during idle state
+            }
           }
           break;
         }

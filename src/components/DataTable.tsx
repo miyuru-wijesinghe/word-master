@@ -17,7 +17,8 @@ export const DataTable: React.FC<DataTableProps> = ({
   startedRow, 
   onSelectRow,
   onEdit,
-  onDelete
+  onDelete,
+  onUpdateRow: _onUpdateRow // Kept for API compatibility but not used in current implementation
 }) => {
   if (data.length === 0) {
     return (

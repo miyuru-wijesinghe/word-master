@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, startTransition } from 'react';
 import { Link } from 'react-router-dom';
 import { broadcastManager } from '../utils/broadcast';
 import type { QuizMessage } from '../utils/broadcast';
@@ -34,6 +34,8 @@ export const ViewPage: React.FC = () => {
   // Track if page has been initialized - prevents processing stale messages on mount
   const isInitializedRef = useRef<boolean>(false);
   const timerEndTimestampRef = useRef<number | null>(null);
+  // Track if timer end beep has been played to prevent double beep
+  const timerEndBeepPlayedRef = useRef<boolean>(false);
   const countdownIntervalRef = useRef<number | null>(null);
   const lastUpdateTimeRef = useRef<number>(-1); // Track last time update to prevent excessive re-renders
   // Track display state in ref to prevent flashing during state transitions
@@ -41,6 +43,8 @@ export const ViewPage: React.FC = () => {
   const shouldShowResultRef = useRef<boolean>(false);
   // Track if start beep has been played for current timer session to prevent double beep
   const startBeepPlayedRef = useRef<boolean>(false);
+  // Track current word in ref for access in countdown interval
+  const currentWordRef = useRef<string>('');
 
   const clearResultTimers = () => {
     if (resultDelayTimeoutRef.current !== null) {
@@ -64,55 +68,89 @@ export const ViewPage: React.FC = () => {
   const startCountdown = () => {
     stopCountdown();
     lastUpdateTimeRef.current = -1; // Reset when starting new countdown
+    // Use 100ms interval for smooth updates without lagging
+    // Direct state updates for better performance
     countdownIntervalRef.current = window.setInterval(() => {
       if (timerEndTimestampRef.current && !pendingJudgeResultRef.current) {
         const nextTime = Math.max(0, Math.floor((timerEndTimestampRef.current - Date.now()) / 1000));
         
         // CRITICAL: Only update state when time actually changes to prevent excessive re-renders
-        // This prevents freezing by reducing state updates from 4 per second to 1 per second
+        // Direct state update for better performance
         if (nextTime !== lastUpdateTimeRef.current) {
-          // Direct state update - React will batch if needed
-          setTimeLeft(nextTime);
-          lastUpdateTimeRef.current = nextTime;
-          
-          // Play countdown beep for last 10 seconds (non-blocking)
+          // CRITICAL: Play beep BEFORE updating state to ensure it's synced with the displayed time
+          // This ensures beeps are perfectly synced with the counter display
           if (nextTime <= 10 && nextTime > 0) {
+            // Last 10 seconds - beep every second (10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
             if (lastBeepRef.current !== nextTime) {
-              setTimeout(() => {
-                try {
-                  soundManager.ensureAudioContext();
-                  soundManager.playCountdownBeep();
-                } catch (e) {
-                  console.warn('Beep error:', e);
-                }
-              }, 0);
-              lastBeepRef.current = nextTime;
+              lastBeepRef.current = nextTime; // Set flag FIRST to prevent duplicate beeps
+              try {
+                soundManager.ensureAudioContext();
+                soundManager.playCountdownBeep();
+              } catch (e) {
+                console.warn('Beep error:', e);
+              }
             }
-          } else if (nextTime === 50 || nextTime === 40 || nextTime === 30 || nextTime === 20 || nextTime === 10) {
-            // Beep at specific milestones (non-blocking)
+          } else if (nextTime === 50 || nextTime === 40 || nextTime === 30 || nextTime === 20) {
+            // Beep at specific milestones (excluding 10 since it's in the last 10 seconds block)
             if (lastBeepRef.current !== nextTime) {
-              setTimeout(() => {
-                try {
-                  soundManager.ensureAudioContext();
-                  soundManager.playCountdownBeep();
-                } catch (e) {
-                  console.warn('Beep error:', e);
-                }
-              }, 0);
-              lastBeepRef.current = nextTime;
+              lastBeepRef.current = nextTime; // Set flag FIRST to prevent duplicate beeps
+              try {
+                soundManager.ensureAudioContext();
+                soundManager.playCountdownBeep();
+              } catch (e) {
+                console.warn('Beep error:', e);
+              }
             }
           }
+          
+          // Update state AFTER beep to ensure perfect sync
+          setTimeLeft(nextTime);
+          lastUpdateTimeRef.current = nextTime;
         }
         
+        // CRITICAL: When timer reaches 0, stop countdown and update state to prevent stuck "RUNNING" state
         if (nextTime <= 0) {
           stopCountdown();
           timerEndTimestampRef.current = null;
+          wasRunningRef.current = false;
+          
+          // CRITICAL: Use startTransition to batch all state updates and prevent flashing
+          startTransition(() => {
+            setIsRunning(false);
+            setIsPaused(false);
+            setHasActiveTimer(false);
+            setTimeLeft(0); // Ensure timeLeft is set to 0
+          });
+          
+          // If we have a pending word but no judge result, trigger result window
+          // This handles the case where timer ends naturally without judge result
+          // CRITICAL: Only trigger once - check if timerEnded is already true to prevent repeated calls
+          // CRITICAL: Only play beep once - check if beep has already been played
+          if (currentWordRef.current && !judgeResult && !judgeResultRef.current && !pendingJudgeResultRef.current && !timerEnded) {
+            const wordToShow = currentWordRef.current;
+            // CRITICAL: Play beep only once - set flag before playing
+            if (!timerEndBeepPlayedRef.current) {
+              timerEndBeepPlayedRef.current = true;
+              soundManager.ensureAudioContext();
+              soundManager.playTimerEndBeep();
+            }
+            startResultWindow(wordToShow);
+          }
         }
+      } else if (!timerEndTimestampRef.current) {
+        // Timer ended or was cleared - stop countdown if still running
+        stopCountdown();
       }
-    }, 250);
+    }, 100); // 100ms interval for smooth updates without lagging
   };
 
   const startResultWindow = (wordToShow?: string, immediate: boolean = false, preserveJudgeResult: boolean = false) => {
+    // CRITICAL: Prevent multiple calls - if timerEnded is already true and we have the same word, skip
+    if (timerEnded && pendingWord === wordToShow && !isResultVisible) {
+      console.log('ViewPage: startResultWindow already called for this word, skipping duplicate call');
+      return;
+    }
+    
     clearResultTimers();
     stopCountdown();
     timerEndTimestampRef.current = null;
@@ -124,21 +162,41 @@ export const ViewPage: React.FC = () => {
       console.log('ViewPage: startResultWindow called without word, resetting timerEnded');
       shouldShowTimerRef.current = false;
       shouldShowResultRef.current = false;
-      setTimerEnded(false);
-      setIsResultVisible(false);
-      setIsRunning(false);
-      setIsPaused(false);
+      // CRITICAL: Use startTransition to batch state updates and prevent flashing
+      startTransition(() => {
+        setTimerEnded(false);
+        setIsResultVisible(false);
+        setIsRunning(false);
+        setIsPaused(false);
+        setPendingWord('');
+        setHasActiveTimer(false);
+        // CRITICAL: Clear old judge results to prevent old "Latest Result" from appearing
+        if (!preserveJudgeResult) {
+          setJudgeResult(null);
+          judgeResultRef.current = null;
+        }
+      });
       return;
     }
     
-    // CRITICAL: Update display refs FIRST to prevent flashing
+    // CRITICAL: Update display refs FIRST synchronously to prevent flashing
     shouldShowTimerRef.current = false;
     shouldShowResultRef.current = true;
     
-    setPendingWord(wordToShow);
-    setTimerEnded(true);
-    setIsRunning(false);
-    setIsPaused(false);
+    // CRITICAL: Use startTransition to batch all state updates and prevent flashing
+    startTransition(() => {
+      setPendingWord(wordToShow);
+      setTimerEnded(true);
+      setIsRunning(false);
+      setIsPaused(false);
+      setHasActiveTimer(false); // CRITICAL: Clear hasActiveTimer to prevent timer from showing instead of loading message
+      // CRITICAL: Clear old judge results if not preserving to prevent old "Latest Result" from appearing
+      if (!preserveJudgeResult) {
+        setJudgeResult(null);
+        judgeResultRef.current = null;
+        pendingJudgeResultRef.current = false;
+      }
+    });
 
     if (immediate) {
       // Show immediately - no delay
@@ -250,6 +308,7 @@ export const ViewPage: React.FC = () => {
     pendingJudgeResultRef.current = false;
     wasRunningRef.current = false;
     startBeepPlayedRef.current = false;
+    timerEndBeepPlayedRef.current = false; // Reset timer end beep flag
     shouldShowTimerRef.current = false;
     shouldShowResultRef.current = false;
     lastBeepRef.current = -1;
@@ -351,15 +410,27 @@ export const ViewPage: React.FC = () => {
       
       switch (message.type) {
         case 'update':
-          // CRITICAL: Only ignore update messages if we have a judge result AND timer is not starting
-          // Allow update messages when timer is starting (isRunning transitions from false to true)
-          // This ensures counter appears when restart is pressed
+          // CRITICAL: Prevent words from appearing automatically without selection
+          // Only process update messages if:
+          // 1. Timer is actually starting (isRunning transitions from false to true), OR
+          // 2. We have an active context (timer was running, paused, or expecting judge)
           const isTimerStarting = message.data?.isRunning && !wasRunningRef.current;
           const hasActiveContext =
             isExpectingJudgeRef.current ||
             wasRunningRef.current ||
             isRunning ||
             isPaused;
+          
+          // CRITICAL: Ignore update messages with words if timer is not starting and no active context
+          // This prevents words from appearing automatically without user selection
+          if (message.data?.word && !isTimerStarting && !hasActiveContext) {
+            console.log('ViewPage: Ignoring update message with word - no active context and timer not starting', {
+              word: message.data.word,
+              sentAt
+            });
+            break;
+          }
+          
           if (message.data?.isRunning && !hasActiveContext && !isTimerStarting) {
             console.log('ViewPage: Ignoring running update with no active context', {
               word: message.data.word,
@@ -375,14 +446,18 @@ export const ViewPage: React.FC = () => {
           // If timer is starting, clear judge result to allow counter to appear
           if (isTimerStarting) {
             console.log('ViewPage: Timer starting, clearing judge result to show counter');
+            // CRITICAL: Update refs synchronously first
             shouldShowTimerRef.current = true;
             shouldShowResultRef.current = false;
-            setJudgeResult(null);
-            judgeResultRef.current = null;
-            pendingJudgeResultRef.current = false;
-            setTimerEnded(false);
-            setIsResultVisible(false);
-            setPendingWord('');
+            // CRITICAL: Use startTransition to batch state updates and prevent flashing
+            startTransition(() => {
+              setJudgeResult(null);
+              judgeResultRef.current = null;
+              pendingJudgeResultRef.current = false;
+              setTimerEnded(false);
+              setIsResultVisible(false);
+              setPendingWord('');
+            });
             clearResultTimers();
           }
           
@@ -398,6 +473,7 @@ export const ViewPage: React.FC = () => {
             isExpectingJudgeRef.current = false;
             setHasActiveTimer(false); // Reset when timer stops
             startBeepPlayedRef.current = false; // Reset beep flag so it can play again on next start
+            timerEndBeepPlayedRef.current = false; // Reset timer end beep flag
           }
           
           // Only update ViewPage if timer is actually running (isRunning === true)
@@ -406,26 +482,43 @@ export const ViewPage: React.FC = () => {
             const wasRunning = wasRunningRef.current;
             const isNowRunning = message.data.isRunning;
             
-            // Play start beep when timer first starts (transitions from not running to running)
-            // Use ref to prevent double beep if message is processed multiple times
-            if (!wasRunning && isNowRunning && !startBeepPlayedRef.current) {
+            // CRITICAL: Check if this is the first start BEFORE updating wasRunningRef
+            // This ensures the beep only plays once even if message is processed multiple times
+            const isFirstStart = !wasRunning && isNowRunning;
+            
+            // CRITICAL: Play start beep ONLY if this is the first start AND flag not set
+            // Set flag FIRST before playing sound to prevent double beep from duplicate messages
+            if (isFirstStart && !startBeepPlayedRef.current) {
+              startBeepPlayedRef.current = true; // Set flag FIRST before playing sound
               soundManager.ensureAudioContext();
               soundManager.playStartSound();
-              startBeepPlayedRef.current = true;
               console.log('Timer started - playing start beep');
             }
             
-            // CRITICAL: Update display refs FIRST to prevent flash during state transitions
+            // CRITICAL: Update wasRunningRef AFTER beep check to prevent double beep
+            wasRunningRef.current = isNowRunning;
+            
+            // CRITICAL: Update display refs FIRST synchronously to prevent flash during state transitions
             // This ensures the correct display appears immediately
             shouldShowTimerRef.current = true;
             shouldShowResultRef.current = false;
             
-            // Then update state - React will batch these
-            setIsRunning(message.data.isRunning);
-            setIsPaused(!message.data.isRunning);
-            setHasActiveTimer(true); // Mark timer as active immediately
-            setTimeLeft(effectiveTimeLeft);
-            setTimerEnded(false);
+            // Track current word in ref for access in countdown interval (synchronous)
+            if (message.data?.word) {
+              currentWordRef.current = message.data.word;
+            }
+            
+            // CRITICAL: Use startTransition to batch all state updates and prevent flashing
+            // This ensures all state updates happen in a single render cycle
+            startTransition(() => {
+              if (message.data) {
+                setIsRunning(message.data.isRunning);
+                setIsPaused(!message.data.isRunning);
+                setHasActiveTimer(true); // Mark timer as active immediately
+                setTimeLeft(effectiveTimeLeft);
+                setTimerEnded(false);
+              }
+            });
             // Only clear result-related states if we're not showing a result AND no judge result exists
             // Check both state and ref to prevent race conditions
             // This prevents clearing judge result when timer updates come in during the delay period
@@ -572,8 +665,12 @@ export const ViewPage: React.FC = () => {
           timerEndTimestampRef.current = null;
           if (message.data && message.data.word) {
             const wordToShow = message.data.word;
-            soundManager.ensureAudioContext();
-            soundManager.playTimerEndBeep();
+            // CRITICAL: Play beep only once - check if beep has already been played
+            if (!timerEndBeepPlayedRef.current) {
+              timerEndBeepPlayedRef.current = true;
+              soundManager.ensureAudioContext();
+              soundManager.playTimerEndBeep();
+            }
             // Set all states together in one batch to prevent flash
             setIsRunning(false);
             setIsPaused(false);
@@ -585,6 +682,7 @@ export const ViewPage: React.FC = () => {
             shouldShowTimerRef.current = false;
             shouldShowResultRef.current = false;
             startBeepPlayedRef.current = false;
+            timerEndBeepPlayedRef.current = false; // Reset timer end beep flag
             setTimerEnded(false);
             setIsResultVisible(false);
             setIsRunning(false);
@@ -617,6 +715,7 @@ export const ViewPage: React.FC = () => {
           shouldShowTimerRef.current = false;
           shouldShowResultRef.current = false;
           startBeepPlayedRef.current = false;
+          timerEndBeepPlayedRef.current = false; // Reset timer end beep flag
           setPendingWord('');
           setTimeLeft(60);
           setIsRunning(false);
@@ -884,22 +983,25 @@ export const ViewPage: React.FC = () => {
             clearResultTimers();
             stopCountdown();
             timerEndTimestampRef.current = null;
-            // Ensure we're in timer mode to display results
-            setDisplayMode('timer');
-            // Set judge result state (ref already set above) - use normalized data
-            setJudgeResult(normalizedJudgeData);
-            console.log('ViewPage: Judge result state set with normalized data:', normalizedJudgeData);
-            console.log('ViewPage: Judge result typedWord after setting state:', normalizedJudgeData.typedWord);
-            // CRITICAL: Update display refs FIRST to prevent flash
+            // CRITICAL: Update display refs FIRST synchronously to prevent flash
             shouldShowTimerRef.current = false;
             shouldShowResultRef.current = true;
             
-            // Stop timer states IMMEDIATELY - this stops the counter from updating
-            setIsRunning(false);
-            setIsPaused(false);
-            setHasActiveTimer(false); // Reset timer active state when result arrives
-            setTimeLeft(0); // Reset timer to 0 to stop display
-            setTimerEnded(true);
+            // CRITICAL: Use startTransition to batch all state updates and prevent flashing
+            startTransition(() => {
+              // Ensure we're in timer mode to display results
+              setDisplayMode('timer');
+              // Set judge result state (ref already set above) - use normalized data
+              setJudgeResult(normalizedJudgeData);
+              // Stop timer states IMMEDIATELY - this stops the counter from updating
+              setIsRunning(false);
+              setIsPaused(false);
+              setHasActiveTimer(false); // Reset timer active state when result arrives
+              setTimeLeft(0); // Reset timer to 0 to stop display
+              setTimerEnded(true);
+            });
+            console.log('ViewPage: Judge result state set with normalized data:', normalizedJudgeData);
+            console.log('ViewPage: Judge result typedWord after setting state:', normalizedJudgeData.typedWord);
             wasRunningRef.current = false; // Update ref to prevent timer from restarting
             // Use startResultWindow with preserveJudgeResult=true to keep judge result visible
             // This shows the result after delay, same as timer end, but preserves judge data
@@ -1087,6 +1189,7 @@ export const ViewPage: React.FC = () => {
         ) : displayMode === 'timer' && timerEnded && !isResultVisible && pendingWord ? (
           /* Show waiting message during 5 second delay after timer ends */
           /* CRITICAL: Show if pendingWord exists and result is not yet visible - this shows even when judgeResult exists but isResultVisible is false */
+          /* This ensures the loading message appears during the delay period before results show */
           <div className="text-center">
             <div className="text-8xl mb-8">⏳</div>
             <h2 className="text-6xl font-bold text-slate-400 mb-4">Timer Ended</h2>
@@ -1094,7 +1197,7 @@ export const ViewPage: React.FC = () => {
               Word will appear shortly...
             </p>
           </div>
-        ) : displayMode === 'timer' && (shouldShowTimerRef.current || (isRunning || isPaused || hasActiveTimer)) && !shouldShowResultRef.current && !isResultVisible ? (
+        ) : displayMode === 'timer' && !timerEnded && (shouldShowTimerRef.current || (isRunning || isPaused || hasActiveTimer)) && !shouldShowResultRef.current && !isResultVisible ? (
           /* Show ONLY timer when running or paused - word is always hidden during countdown */
           /* Hide timer when result is visible - use refs to prevent flashing */
           <div className="text-center max-w-4xl mx-auto">
@@ -1124,7 +1227,9 @@ export const ViewPage: React.FC = () => {
           </div>
         )}
       </div>
-      {displayMode === 'timer' && (isResultVisible || (judgeResult && pendingWord)) && (
+      {/* CRITICAL: Only show result if it's actually visible and we have valid data - prevents old results from showing */}
+      {/* Also check that we're not in a transition state and that timer has ended to prevent flashing and old results */}
+      {displayMode === 'timer' && isResultVisible && timerEnded && (judgeResult || pendingWord) && !shouldShowTimerRef.current && (
         <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-12 pb-8 lg:pb-10 overflow-x-hidden">
           <div className="w-full max-w-5xl mx-auto">
           <div

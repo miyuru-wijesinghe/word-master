@@ -1094,7 +1094,13 @@ export const ActionPage: React.FC = () => {
           }
           
         const broadcastTime = newTime;
+        // Use setTimeout to make broadcast non-blocking, but check if timer is still running before sending
         setTimeout(() => {
+          // Check if timer is still running before broadcasting (prevents stale updates)
+          if (!isRunningRef.current || isPausedRef.current) {
+            return;
+          }
+          
           const updateQuizData = quizDataRef.current;
           const updateSelectedRows = selectedRowsRef.current;
           const updateWord = currentWordRef.current;
