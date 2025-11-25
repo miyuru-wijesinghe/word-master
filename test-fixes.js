@@ -1,6 +1,8 @@
 import puppeteer from 'puppeteer';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import http from 'http';
+import { spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -43,10 +45,22 @@ async function testFixes() {
     console.log('   - Starting timer...');
     
     // Start timer from action page
-    const startButton = await actionPage.$('button:has-text("Start")');
-    if (startButton) {
-      await startButton.click();
+    const startClicked = await actionPage.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const target = buttons.find((btn) => {
+        const text = (btn.textContent || '').toLowerCase();
+        return text.includes('start') || text.includes('play');
+      });
+      if (target) {
+        target.click();
+        return true;
+      }
+      return false;
+    });
+    if (startClicked) {
       await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for timer to start
+    } else {
+      console.warn('   ⚠️  Could not find Start/Play button automatically.');
     }
 
     // Wait for timer to complete (or simulate end)
@@ -141,37 +155,84 @@ async function testFixes() {
   }
 }
 
-// Check if dev server is running
 async function checkServer() {
-  try {
-    const http = await import('http');
-    return new Promise((resolve) => {
-      const req = http.request(BASE_URL, { method: 'HEAD' }, (res) => {
-        resolve(res.statusCode === 200);
-      });
-      req.on('error', () => resolve(false));
-      req.setTimeout(2000, () => {
-        req.destroy();
-        resolve(false);
-      });
-      req.end();
+  return new Promise((resolve) => {
+    const req = http.request(BASE_URL, { method: 'HEAD' }, (res) => {
+      resolve(res.statusCode === 200);
     });
-  } catch {
-    return false;
+    req.on('error', () => resolve(false));
+    req.setTimeout(2000, () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.end();
+  });
+}
+
+async function waitForServerReady(timeoutMs = 20000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await checkServer()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error('Dev server failed to start within timeout');
+}
+
+async function startDevServer() {
+  console.log('⚙️  Starting dev server...');
+  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const serverProcess = spawn(
+    npmCommand,
+    ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'],
+    {
+      cwd: join(__dirname, '.'),
+      env: { ...process.env, BROWSER: 'none' },
+      stdio: 'inherit'
+    }
+  );
+
+  try {
+    await waitForServerReady();
+    console.log('✅ Dev server is running\n');
+    return serverProcess;
+  } catch (error) {
+    serverProcess.kill();
+    throw error;
   }
 }
 
 // Main execution
 (async () => {
   console.log('🔍 Checking if dev server is running...');
-  const serverRunning = await checkServer();
-  
-  if (!serverRunning) {
-    console.log('⚠️  Dev server not running. Please run "npm run dev" in another terminal first.');
-    console.log('   Then run: npm run test:puppeteer');
-    process.exit(1);
-  }
+  let serverProcess = null;
+  let serverRunning = await checkServer();
 
-  await testFixes();
+  try {
+    if (!serverRunning) {
+      serverProcess = await startDevServer();
+      serverRunning = true;
+    }
+
+    await testFixes();
+  } catch (error) {
+    console.error('❌ Puppeteer test run failed:', error);
+    process.exitCode = 1;
+  } finally {
+    if (serverProcess) {
+      console.log('🛑 Stopping dev server...');
+      serverProcess.kill('SIGINT');
+      await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          serverProcess.kill('SIGTERM');
+        }, 2000);
+        serverProcess.on('exit', () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+      });
+    }
+  }
 })();
 
