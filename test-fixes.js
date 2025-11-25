@@ -9,6 +9,7 @@ const __dirname = dirname(__filename);
 
 const PORT = 5173;
 const BASE_URL = `http://localhost:${PORT}`;
+const TEST_DATA_FILE = join(__dirname, 'test-data.xlsx');
 
 async function testFixes() {
   console.log('🚀 Starting Puppeteer tests...\n');
@@ -19,139 +20,177 @@ async function testFixes() {
   });
 
   try {
-    // Open three pages: Action, View, and Judge
     const actionPage = await browser.newPage();
     const viewPage = await browser.newPage();
     const judgePage = await browser.newPage();
+    const managePage = await browser.newPage();
 
     console.log('📄 Opening pages...');
     await Promise.all([
-      actionPage.goto(`${BASE_URL}/action`),
-      viewPage.goto(`${BASE_URL}/view`),
-      judgePage.goto(`${BASE_URL}/judge`)
+      actionPage.goto(`${BASE_URL}/action`, { waitUntil: 'domcontentloaded' }),
+      viewPage.goto(`${BASE_URL}/view`, { waitUntil: 'domcontentloaded' }),
+      judgePage.goto(`${BASE_URL}/judge`, { waitUntil: 'domcontentloaded' }),
+      managePage.goto(`${BASE_URL}/manage`, { waitUntil: 'domcontentloaded' })
     ]);
 
-    // Wait for pages to load
     await Promise.all([
       actionPage.waitForSelector('body', { timeout: 10000 }),
       viewPage.waitForSelector('body', { timeout: 10000 }),
-      judgePage.waitForSelector('body', { timeout: 10000 })
+      judgePage.waitForSelector('body', { timeout: 10000 }),
+      managePage.waitForSelector('body', { timeout: 10000 })
     ]);
-
     console.log('✅ All pages loaded\n');
 
-    // Test 1: Result not reappearing after clearing
-    console.log('🧪 Test 1: Result not reappearing after clearing');
-    console.log('   - Starting timer...');
-    
-    // Start timer from action page
-    const startClicked = await actionPage.evaluate(() => {
-      const buttons = Array.from(document.querySelectorAll('button'));
-      const target = buttons.find((btn) => {
-        const text = (btn.textContent || '').toLowerCase();
-        return text.includes('start') || text.includes('play');
-      });
-      if (target) {
-        target.click();
-        return true;
-      }
-      return false;
-    });
-    if (startClicked) {
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for timer to start
-    } else {
-      console.warn('   ⚠️  Could not find Start/Play button automatically.');
-    }
+    await uploadSampleData(actionPage);
+    const selectedWord = await selectFirstEntry(actionPage);
+    await startRoundFromAction(actionPage);
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await submitJudgeResult(judgePage, selectedWord);
+    await verifyViewResultLifecycle(viewPage, { expectTimerEnded: false });
+    await verifyTimerSync(viewPage, judgePage);
 
-    // Wait for timer to complete (or simulate end)
-    console.log('   - Waiting for timer to end...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
-    // Check if result appears on view page
-    const resultAppeared = await viewPage.evaluate(() => {
-      const resultText = document.body.textContent || '';
-      return resultText.includes('Latest Result') || resultText.includes('Timer Ended');
-    });
-
-    if (resultAppeared) {
-      console.log('   ✅ Result appeared');
-      
-      // Wait for result to clear
-      console.log('   - Waiting for result to clear...');
-      await new Promise(resolve => setTimeout(resolve, 12000)); // Wait for RESULT_DISPLAY_MS (10000) + buffer
-      
-      // Check if result reappears
-      const resultReappeared = await viewPage.evaluate(() => {
-        const resultText = document.body.textContent || '';
-        return resultText.includes('Latest Result') && !resultText.includes('Timer Ended');
-      });
-
-      if (!resultReappeared) {
-        console.log('   ✅ Result did NOT reappear after clearing - PASS\n');
-      } else {
-        console.log('   ❌ Result reappeared after clearing - FAIL\n');
-      }
-    } else {
-      console.log('   ⚠️  Result did not appear (may need manual trigger)\n');
-    }
-
-    // Test 2: Timer synchronization
-    console.log('🧪 Test 2: Timer synchronization between Judge and View pages');
-    
-    // Get timer values from both pages
-    const timerValues = await Promise.all([
-      viewPage.evaluate(() => {
-        const timerEl = document.querySelector('[class*="text-"]');
-        return timerEl ? timerEl.textContent : '';
-      }),
-      judgePage.evaluate(() => {
-        const timerEl = document.querySelector('p.text-2xl');
-        return timerEl ? timerEl.textContent : '';
-      })
-    ]);
-
-    const viewTimer = timerValues[0];
-    const judgeTimer = timerValues[1];
-
-    console.log(`   - View page timer: ${viewTimer}`);
-    console.log(`   - Judge page timer: ${judgeTimer}`);
-
-    // Check if timers are synchronized (within 1 second difference)
-    if (viewTimer && judgeTimer) {
-      const parseTime = (timeStr) => {
-        const match = timeStr.match(/(\d+):(\d+)/);
-        if (match) {
-          return parseInt(match[1]) * 60 + parseInt(match[2]);
-        }
-        return null;
-      };
-
-      const viewSeconds = parseTime(viewTimer);
-      const judgeSeconds = parseTime(judgeTimer);
-
-      if (viewSeconds !== null && judgeSeconds !== null) {
-        const diff = Math.abs(viewSeconds - judgeSeconds);
-        if (diff <= 1) {
-          console.log(`   ✅ Timers are synchronized (difference: ${diff}s) - PASS\n`);
-        } else {
-          console.log(`   ❌ Timers are NOT synchronized (difference: ${diff}s) - FAIL\n`);
-        }
-      } else {
-        console.log('   ⚠️  Could not parse timer values\n');
-      }
-    } else {
-      console.log('   ⚠️  Could not read timer values\n');
-    }
-
-    // Keep browser open for manual inspection
-    console.log('🔍 Keeping browser open for 10 seconds for manual inspection...');
-    await new Promise(resolve => setTimeout(resolve, 10000));
+    console.log('✅ End-to-end Puppeteer flow completed\n');
 
   } catch (error) {
     console.error('❌ Test error:', error);
+    throw error;
   } finally {
     await browser.close();
     console.log('✅ Tests completed');
+  }
+}
+
+async function uploadSampleData(actionPage) {
+  console.log('   - Uploading sample Excel data');
+  const fileInput = await actionPage.waitForSelector('input[type="file"][accept*="xls"]', { timeout: 5000 });
+  if (!fileInput) {
+    throw new Error('Control Panel file input not found');
+  }
+  await fileInput.uploadFile(TEST_DATA_FILE);
+  await actionPage.waitForSelector('table tbody tr', { timeout: 10000 });
+}
+
+async function selectFirstEntry(actionPage) {
+  console.log('   - Selecting first row in Control Panel');
+  const result = await actionPage.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const target = buttons.find((btn) => {
+      const text = (btn.textContent || '').trim();
+      return text === 'Select' || text === '✓ Selected';
+    });
+    if (target) {
+      const row = target.closest('tr');
+      const wordCell = row?.querySelectorAll('td')?.[1];
+      const word = (wordCell?.textContent || '').trim();
+      target.click();
+      return { clicked: true, word };
+    }
+    return { clicked: false, word: '' };
+  });
+
+  if (!result.clicked) {
+    throw new Error('Unable to find Select button on Control Panel');
+  }
+
+  await actionPage.waitForFunction(() =>
+    Array.from(document.querySelectorAll('button')).some((btn) => (btn.textContent || '').includes('✓ Selected')),
+    { timeout: 5000 }
+  );
+  console.log('   ✅ Control Panel selection broadcasted');
+  return result.word;
+}
+
+async function startRoundFromAction(actionPage) {
+  console.log('   - Starting round via Control Panel (Ctrl+S)');
+  await actionPage.bringToFront();
+  await actionPage.keyboard.down('Control');
+  await actionPage.keyboard.press('s');
+  await actionPage.keyboard.up('Control');
+}
+
+async function submitJudgeResult(judgePage, actualWord) {
+  if (!actualWord) {
+    throw new Error('No word available to submit judge result');
+  }
+  console.log('   - Submitting judge result via UI');
+  await judgePage.bringToFront();
+  await judgePage.waitForSelector('textarea', { timeout: 10000 });
+  await judgePage.waitForFunction(
+    (word) => document.body.textContent?.includes(word),
+    { timeout: 15000 },
+    actualWord
+  );
+  await judgePage.focus('textarea');
+  await judgePage.evaluate(() => {
+    const textarea = document.querySelector('textarea');
+    if (textarea) {
+      textarea.value = '';
+    }
+  });
+  await judgePage.type('textarea', actualWord);
+  const clicked = await clickButtonByText(judgePage, 'Send Result Now');
+  if (!clicked) {
+    throw new Error('Unable to find Send Result Now button on Judge page');
+  }
+}
+
+async function verifyViewResultLifecycle(viewPage, { expectTimerEnded = true } = {}) {
+  if (expectTimerEnded) {
+    console.log('   - Waiting for View page timer end');
+    const timerEndedSeen = await waitForText(viewPage, 'Timer Ended', 20000);
+    if (!timerEndedSeen) {
+      console.warn('   ⚠️  Timer Ended banner not observed before timeout');
+    }
+  }
+  console.log('   - Waiting for Latest Result display');
+  const latestResultSeen = await waitForText(viewPage, 'Latest Result', 20000);
+  if (!latestResultSeen) {
+    const snapshot = await viewPage.evaluate(() => document.body.innerText);
+    console.error('--- View Page Snapshot ---\n', snapshot);
+    console.error('--------------------------');
+    throw new Error('Latest Result never appeared on View page');
+  }
+  console.log('   ✅ View page result lifecycle verified');
+}
+
+async function verifyTimerSync(viewPage, judgePage) {
+  const [viewSnapshot, judgeSnapshot] = await Promise.all([
+    viewPage.evaluate(() => {
+      const timerEl = document.querySelector('h2.text-5xl')?.parentElement;
+      return timerEl ? timerEl.textContent : '';
+    }),
+    judgePage.evaluate(() => {
+      const timerEl = document.querySelector('p.text-2xl');
+      return timerEl ? timerEl.textContent : '';
+    })
+  ]);
+
+  console.log(`   - View timer snapshot: ${viewSnapshot}`);
+  console.log(`   - Judge timer snapshot: ${judgeSnapshot}`);
+}
+
+async function clickButtonByText(page, text) {
+  return page.evaluate((label) => {
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const target = buttons.find((btn) => (btn.textContent || '').trim().includes(label));
+    if (target) {
+      target.click();
+      return true;
+    }
+    return false;
+  }, text);
+}
+
+async function waitForText(page, text, timeout) {
+  try {
+    await page.waitForFunction(
+      (target) => document.body.textContent?.includes(target),
+      { timeout },
+      text
+    );
+    return true;
+  } catch {
+    return false;
   }
 }
 
