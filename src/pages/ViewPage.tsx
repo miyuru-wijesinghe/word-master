@@ -1248,7 +1248,7 @@ export const ViewPage: React.FC = () => {
             </p>
           </div>
           )
-        ) : displayMode === 'timer' && timerEnded && !isResultVisible && pendingWord ? (
+        ) : displayMode === 'timer' && timerEnded && !isResultVisible && pendingWord && shouldShowResultRef.current ? (
           /* Show waiting message during 5 second delay after timer ends */
           /* CRITICAL: Show if pendingWord exists and result is not yet visible - this shows even when judgeResult exists but isResultVisible is false */
           /* This ensures the loading message appears during the delay period before results show */
